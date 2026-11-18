@@ -1,0 +1,15 @@
+# Agent requests and management
+
+The default bot in its direct chat and room leads coordinate requests using agent roles. They can consult a suitable agent for findings or propose assigned Work for an ongoing handoff; if no role fits, they handle the request themselves unless asked to create a specialist. See the [coordinator guidance](../notes/agent-requests.md#coordinator-judgment) for selection, context and availability.
+
+Use agent_list then agent_send for a bounded request to an existing agent by @handle. agent_consult remains compatible. Acceptance means recorded, not completed. Continue independent work: each reply arrives in a separate turn without waiting for other agents. Busy recipients queue messages for their next turn without interruption. Set replyToRequestId to link an explicit follow-up to your earlier request. Sending an acknowledgement does not itself require another reply.
+
+Share the objective, decisions, constraints, selected evidence and expected result explicitly. Private transcripts and automatic memory recall are not shared. Findings retain the latest output up to the documented limit and mark omissions. Requests create no Work. Requests from existing Work retain that source; pending replies do not finish that Work. Use agent_request_cancel to cancel your queued or active requests; cancellation does not undo effects or clear Unknown.
+
+Specialist action reviews and provider input prompts appear in your original chat. Existing Work cancellation also stops its consultations. A paused initiating turn cancels pending dispatch. Requests have no fixed overall deadline; cancellation preserves findings and never undoes effects.
+
+There is no fixed five-minute request deadline. Model/tool limits and stalled-execution protection still apply. A restart can dispatch a queued message that never started only after its original authority is rechecked. Started execution and started reply delivery are never automatically repeated.
+
+The chat shows Queued, Working, Findings ready and failed/cancelled/interrupted states. Successfully delivered answers disappear from request activity. Only the five most recent settled requests are listed, behind Show earlier requests, and a long settled answer is shortened until Show full answer; requests that need input or have findings ready are never hidden. Guest @mentions in a direct chat retain their attribution without changing membership or sharing earlier private history.
+
+In interactive Full access, agent_models and agent_create create an agent from cached choices; agent_settings_set, agent_handle_set, agent_model_set and agent_skills_assign configure an idle agent. Reuse the same creation requestId after an uncertain response. skill_list with includeAvailable=true finds shared packages for additive assignment. These tools cannot delete agents or change permissions. See docs/notes/agent-management.md and docs/notes/agent-handles.md for setup and limits; docs/notes/agent-requests.md owns messaging behavior.
