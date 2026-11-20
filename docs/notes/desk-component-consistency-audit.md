@@ -209,7 +209,7 @@ The CLI resolves primitive documentation; the model selector is an AI Elements c
 
 The following tables record the current disposition. Per-module source, native imports, controlled view families and applicable checks are in the linked OA-409 source audit. Rendered family coverage does not certify every conditional live state.
 
-### Shared UI modules (35)
+### Shared UI modules (36)
 
 | Source | Intended disposition | Verification |
 | --- | --- | --- |
@@ -243,6 +243,7 @@ The following tables record the current disposition. Per-module source, native i
 | [sidebar](../../apps/desk/src/components/ui/sidebar.tsx) | Retain native Sidebar; reconcile navigation states, mobile destinations and labels. | Corrected native composition — shared native primitive; OA-409 scope and evidence. |
 | [skeleton](../../apps/desk/src/components/ui/skeleton.tsx) | Retain native Skeleton; reconcile loading placeholders. | Reconciled native composition — shared native primitive; OA-409 scope and evidence. |
 | [sonner](../../apps/desk/src/components/ui/sonner.tsx) | shadcn Sonner wrapper: popover/border/radius tokens, lucide status icons, and the theme taken from the desk's effective `data-theme` so a manual Light/Dark choice is followed. AutomationsPanel uses it in place of the raw `sonner` Toaster with inline styles. | Source and controlled DOM checks only; rendered light/dark toast comparison remains unverified. |
+| [spinner](../../apps/desk/src/components/ui/spinner.tsx) | shadcn base Spinner (`shadcn@4.23.0 add spinner`, unchanged): a `role="status"` "Loading" icon for busy Buttons with `data-icon` and `disabled`. Used by the profile form. | Rendered desktop/phone light/dark busy Save and Upload buttons — 20 November 2026 design findings. |
 | [switch](../../apps/desk/src/components/ui/switch.tsx) | Retain native Switch; preserve track dimensions and labelled hit targets. | Reconciled native composition — shared native primitive; OA-409 scope and evidence. |
 | [table](../../apps/desk/src/components/ui/table.tsx) | Retain native Table; migrate Ledger/permissions while preserving headers and scrolling. | Reconciled native composition — shared native primitive; OA-409 scope and evidence. |
 | [tabs](../../apps/desk/src/components/ui/tabs.tsx) | Retain native Tabs; reconcile tab styles, overflow and selected state. | Reconciled native composition — shared native primitive; OA-409 scope and evidence. |
@@ -480,6 +481,8 @@ Composer Add/dictation/stop/cancel/send and compact model/effort triggers use th
 ## OA-443 — Composer icon legibility
 
 Shared InputGroupButton icon-sm uses24px glyphs and semantic foreground instead of inherited muted text. All actual callers are composer actions/compact model/reasoning controls. CUA12 width/theme/state views confirm24px glyphs, unchanged44px phone/32px compact desktop targets, transparent borders/fills and correct light/dark foreground. Disabled opacity remains50%; enabled Send is100%..
+
+**Superseded 20 November 2026 (owner):** the 24px glyphs looked oversized next to the rest of the desk. `icon-sm` composer buttons are back to the default 16px glyphs. Semantic foreground, 32px desktop and 44px phone targets are unchanged. Rendered desktop-dark and phone-light composer checks confirm all five actions (Attach, Model, Effort, Dictate, Send) at 16px. The composer's inline "Some model sources are unavailable. Refresh models" notice was removed at the owner's request because it shifted the action row. Model refresh stays in Settings → Models, and the controls keep their attention state.
 
 ## OA-444 — Matching Send color
 
@@ -762,3 +765,35 @@ The compact approval keeps the base-nova Item, semantic Badge, Disclosure, Separ
 The direct-chat permission picker reuses the installed base-nova Dialog, Select, Field and Textarea. Controlled DOM/gateway checks cover selecting a prospective guest, saving its mode, setting the coordinator's shared writable folder before assignment, Limited-device refusal and unchanged membership. The direct-chat Work panel includes guest assignments from that chat alongside the bot's other Work.
 
 The in-app browser opened a disposable gateway in dark mode. At desktop size the guest assignment appeared in the originating chat and Work panel. With a synthetic model-settings response, `/permission` opened the native dialog, listed the coordinator and prospective guest agents, and showed the writable-folders field. At 390×844 the guest selection and field remained visible and the save and cancel controls were reachable by scrolling; Escape returned focus to the composer. The gateway check covers actual saves and permission boundaries. Light-theme, screen-reader and full state coverage were not checked.
+
+## Rendered acceptance — 18 November 2026
+
+Real Chromium renders (desktop 1440×1000, phone 390×844 with touch, light and dark) now cover the states the OA-459, OA-460, OA-462, OA-466, OA-469, OA-473, OA-474, OA-476 and OA-477 entries above left as "rendered comparison pending", plus OA-390 and the 0.7.0 sign-in page. 113 of 113 renders passed overflow, error and state checks. Scope, results and screenshots: [rendered-acceptance.md](rendered-acceptance.md). Physical phone, Safari, PWA and screen-reader use remain unverified.
+
+Two defects were fixed against the installed compositions. Feed no longer draws an empty Bubble above an attachment-only message. The shared [slider](../../apps/desk/src/components/ui/slider.tsx) now follows the shadcn base Slider: positioned Control, `thumbAlignment="edge"`, `slider-track`/`slider-range`/`slider-thumb` slots and upstream thumb styling, keeping one named thumb for a scalar value and the 44px touch height. Before, its thumb escaped the Control and rendered at the crop dialog's edge.
+
+Open composition findings are listed in the notes table: sign-in title not a heading, error Alert placement, agent editor help text using a local mono class instead of FieldDescription, the activity summary's phone truncation order, Load earlier overlapping text, two reply composer patterns, the profile form's raw fieldset and busy-state text, and the Sonner wrapper versus the Base UI toast.
+
+## Rendered design findings — 20 November 2026
+
+Fixes for the open findings from the 18 November sweep, each asserted in real Chromium by [verify-rendered-acceptance.mjs](../../scripts/verify-rendered-acceptance.mjs) at desktop 1440×1000 and phone 390×844, light and dark. The full run passed 123 of 123 renders. Physical phones, Safari and screen readers remain unverified.
+
+- Sign-in: the `CardTitle` "Connect this device" carries heading role, level 1, so the page has an `h1` for assistive technology. The global `h1` rule would restyle a native `h1`, so the Card composition stays and the role is added; screenshots are byte-identical to before.
+- Sign-in errors: one destructive `Alert` now opens the card content, above the method tabs, for the revoked-device notice and pairing or direct-join failures. Before, each form drew it below its submit button.
+- Agent editor: the handle and maximum model steps help are `FieldDescription`s inside their `Field`, and the footer Saved status uses the muted body text. The local `MONO` class is gone; the `api · @handle` identifier line keeps its monospace style.
+- Activity summary: the summary row's `TraceDescription` takes `min-w-0 flex-1 truncate`, so at 390px the counts truncate and "boss · Activity" stays whole. A zero flex basis gives the counts no share of the shrink, so a title wider than the row still truncates after the counts reach zero. Inner activity lines keep the Trace default (title truncates first).
+- Load earlier: the control row is the installed `Marker` with `variant="border"`, so a full-width rule separates it from the transcript. Measured before the change, the row already sat outside the scroll viewport; the overlap was perceptual, from text clipped right under a borderless row. Prepend anchoring is unchanged (`verify-transcript.mjs --browser` and the OA-466 48px anchor check pass).
+- Composer replies: RoomView owns one `ReplyTarget` (`message` with its id, or `question` with id and revision; both carry the quote) and the composer renders it with one block-start `InputGroupAddon`: "Replying to", the `MessageQuote` blockquote and the icon Cancel reply button. Answering a question still sends `replyToQuestion {id, revision}` and keeps the asking agent's model and permission controls; Escape and Cancel reply clear either kind. The one-line "Replying to:" text and New message button are gone; `verify-conversation-interactions.mjs` and the help topic now use Cancel reply.
+- Profile: the raw `fieldset` is the shadcn `FieldSet` (it still disables the form while loading, saving or reading an image), and the busy Upload image and Save profile buttons use the newly installed `Spinner` with `data-icon="inline-start"` and `disabled`. The separate "Reading image…" paragraph is gone. No `FieldLegend` was added: the Card section title already names the group.
+
+## Keyboard-instant motion — 20 November 2026
+
+Five motion fixes in the installed base-nova components, each asserted by the `motion` scenario of [verify-rendered-acceptance.mjs](../../scripts/verify-rendered-acceptance.mjs) in Chromium at desktop 1440×1000, light, with normal motion preferences. Each assertion failed before its fix. Rules: [desk-motion.md](desk-motion.md).
+
+- Command palette: `DialogContent` takes `overlayClassName`; `CommandDialog` turns off popup and backdrop animation. A pointer-opened dialog (profile crop) still animates.
+- Mention picker: its `PopoverContent` has `animate-none!`; the shared Popover is unchanged.
+- Dropdown menu, Popover and Tooltip popups add `data-instant:animate-none!`, so keyboard and focus opens and Escape closes are instant. A pointer-opened menu still animates. Select is unchanged.
+- Sheet: panel and backdrop use `cubic-bezier(0.23,1,0.32,1)`, 200ms open and 150ms close; the panel transitions only opacity and translate.
+- Message scroller: the jump-to-latest exit is 150ms on the house curve instead of 400ms `cubic-bezier(0.7,0,0.84,0)`.
+
+Phone sizes, dark theme, Safari and physical devices were not run for the motion scenario; these are class changes with no layout effect, and the full acceptance run covers layout at those sizes with reduced motion.

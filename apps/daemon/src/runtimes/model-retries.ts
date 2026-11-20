@@ -2,6 +2,7 @@ import type { RequestTrace } from '../request-provenance.js';
 import { modelRevision } from '../botmodels.js';
 import { HostedStop, stopHosted, type RuntimeOutcome, type StopReason } from './hosted-execution.js';
 import type { TurnContext } from './types.js';
+import { getDefaultRedactor } from '../redact.js';
 
 export interface ProviderWait { revision:string; notBeforeAt:number|null }
 interface RequestState { step:number; revision:string; attempts:number; deadlineAt:number; status:'active'|'completed'|'stopped' }
@@ -38,6 +39,22 @@ function wait(ms:number,signal:AbortSignal):Promise<void>{
     const timer=setTimeout(()=>{signal.removeEventListener('abort',abort);resolve();},ms);
     signal.addEventListener('abort',abort,{once:true});
   });
+}
+/** A short, redacted provider explanation (HTTP status, error code, message) for the turn's error, or undefined. */
+export function providerDetail(error:unknown):string|undefined {
+  for(const candidate of [error,(error as {cause?:unknown}|null)?.cause,(error as {lastError?:unknown}|null)?.lastError]){
+    if(!candidate||typeof candidate!=='object')continue;
+    const e=candidate as {statusCode?:unknown;responseBody?:unknown;data?:unknown};
+    let body:unknown=e.data;
+    if(!body&&typeof e.responseBody==='string'){try{body=JSON.parse(e.responseBody);}catch{body=undefined;}}
+    const inner=(body&&typeof body==='object'&&'error' in body?(body as {error:unknown}).error:body) as {code?:unknown;type?:unknown;message?:unknown}|undefined;
+    const status=typeof e.statusCode==='number'?e.statusCode:undefined;
+    const code=typeof inner?.code==='string'?inner.code:typeof inner?.type==='string'?inner.type:undefined;
+    const message=typeof inner?.message==='string'?inner.message:undefined;
+    if(status===undefined&&!code&&!message)continue;
+    const text=['Provider',status,code&&`${code}:`,message].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
+    return getDefaultRedactor().redactString(text).slice(0,200);
+  }
 }
 function semanticFailure(error:unknown):'context_limit'|'provider_error'|undefined {
   if(!error||typeof error!=='object')return;
@@ -116,7 +133,7 @@ export async function retryModelRequest<T>(ctx:TurnContext,operation:(signal:Abo
           const streamFailed=(error:unknown):never=>{
             const semantic=semanticFailure(error);
             if(semantic==='context_limit')stop('context_limit','incomplete');
-            if(semantic==='provider_error'||(!contentDelivered&&!temporary(error)))stop('provider_error','failed');
+            if(semantic==='provider_error'||(!contentDelivered&&!temporary(error)))stop('provider_error','failed',undefined,providerDetail(error));
             return stop('provider_interrupted','incomplete');
           };
           const stream=new ReadableStream({
@@ -136,11 +153,11 @@ export async function retryModelRequest<T>(ctx:TurnContext,operation:(signal:Abo
         check();
         if(error instanceof HostedStop)throw error;
         if(semanticFailure(error)==='context_limit')stop('context_limit','incomplete');
-        if(!temporary(error))stop('provider_error','failed',undefined,error instanceof ModelHttpError?error.message:undefined);
+        if(!temporary(error))stop('provider_error','failed',undefined,error instanceof ModelHttpError?error.message:providerDetail(error));
         const providerAt=providerTime(error,now());
         if(request.attempts>=3){
           if(providerAt!==undefined&&providerAt>now()){save(ctx,{providerWait:{revision,notBeforeAt:Number.isFinite(providerAt)?providerAt:null}});stop('provider_backoff','incomplete',Number.isFinite(providerAt)?providerAt:undefined);}
-          stop('provider_error','failed');
+          stop('provider_error','failed',undefined,providerDetail(error));
         }
         const at=Math.max(now()+1000*2**(request.attempts-1),providerAt??0);
         save(ctx,{hostedRequest:{...request},providerWait:{revision,notBeforeAt:Number.isFinite(at)?at:null}});

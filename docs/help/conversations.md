@@ -100,7 +100,7 @@ Dictation adds speech to your draft. Enable it in Settings → Models → Dictat
 
 ## Questions and decisions in chat
 
-Bot questions appear as ordinary messages. Older open questions outside loaded history appear below it as **Unanswered question** cards with their original date. Dismiss closes it without an answer or continuation; history and your draft remain. Choose Reply to answer that question; New message sends an unrelated message. Approvals and live integration prompts remain explicit cards. Needs you and its separate queues are removed. Open questions pause their requests, not unrelated conversation. Interruptions create no acknowledgement form. See [interaction rules](../notes/chat-interactions.md).
+Bot questions appear as ordinary messages. Older open questions outside loaded history appear below it as **Unanswered question** cards with their original date. Dismiss closes it without an answer or continuation; history and your draft remain. Reply answers it with the usual quoted preview; Cancel reply or Escape removes it. Approvals and live integration prompts remain explicit cards. Needs you and its separate queues are removed. Open questions pause their requests, not unrelated conversation. Interruptions create no acknowledgement form. See [interaction rules](../notes/chat-interactions.md).
 
 ## Long conversations
 

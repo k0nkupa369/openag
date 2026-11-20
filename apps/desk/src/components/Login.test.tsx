@@ -62,6 +62,24 @@ describe("Login", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect device" }));
     expect(await screen.findByText("Too many attempts. Try again in 42 seconds.")).toBeTruthy();
   });
+
+  it("shows a sign-in error before the form, where it is read first", async () => {
+    stubFetch(() => json(400, { error: "invalid or expired code" }));
+    const { rerender } = render(<Login notice="This device was revoked." onSignedIn={vi.fn()} />);
+    const precedesForm = () => expect(screen.getByRole("alert").compareDocumentPosition(screen.getByRole("tabpanel")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe("This device was revoked.");
+    precedesForm();
+    rerender(<Login notice={null} onSignedIn={vi.fn()} />);
+    fill("Pairing code", "ZZZZZZZZ");
+    fireEvent.click(screen.getByRole("button", { name: "Connect device" }));
+    expect(await screen.findByText("Invalid or expired code")).toBeTruthy();
+    precedesForm();
+  });
+
+  it("names the page with a level-one heading", () => {
+    render(<Login notice={null} onSignedIn={vi.fn()} />);
+    expect(screen.getByRole("heading", { level: 1, name: "Connect this device" })).toBeTruthy();
+  });
 });
 
 describe("Login join link", () => {

@@ -106,7 +106,7 @@ export function createModelDiscovery(env: NodeJS.ProcessEnv = process.env, doFet
     const model = missing ? rows[0]?.id ?? "" : requested ?? rows[0]?.id ?? "";
     if (!rows.some(m => m.id === model)) throw new ModelError("Selected model is not in the provider's available list", 409);
     const forModel = (model: string): ModelChoices => {
-      const capabilities = getModelReasoningOptions(model);
+      const capabilities = reasoningCapabilities(target, model);
       const detail = details.get(model);
       const outputLimit = target === "anthropic" ? detail?.max_tokens : detail?.top_provider?.max_completion_tokens;
       const canBudget = Number.isSafeInteger(outputLimit) && outputLimit! > 1 && (target !== "anthropic" || detail?.capabilities?.thinking?.types?.enabled?.supported === true);
@@ -173,9 +173,19 @@ function transport(target: string, model: string) {
   const npm = override?.npm ?? p?.npm;
   return ["@ai-sdk/anthropic", "@ai-sdk/openai", "@ai-sdk/google", "@ai-sdk/mistral"].includes(npm ?? "") ? npm!.slice(8) : "compatible";
 }
+/** Bump when OpenAg's own capability inference changes, so catalogues cached by older code refresh on the next read. */
+export const HOSTED_CAPABILITY_REVISION = 2;
+/** GPT-6 or later OpenAI models the installed catalogue does not list yet: the effort values Mastra's own OpenAI provider applies to that family. */
+const GPT6_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+export function reasoningCapabilities(target: string, model: string): ReturnType<typeof getModelReasoningOptions> {
+  const listed = getModelReasoningOptions(model);
+  if (listed || target !== "openai") return listed;
+  const version = /^(?:openai\/)?gpt-(\d+)(?:\.\d+)?(?:-([a-z][a-z0-9-]*))?$/.exec(model);
+  return version && Number(version[1]) >= 6 && !version[2]?.startsWith("chat") ? [{ type: "effort", values: GPT6_EFFORTS }] : undefined;
+}
 function catalogueControls(target: string, model: string): ModelControl[] {
   const kind = transport(target, model);
-  return (getModelReasoningOptions(model) ?? []).flatMap((c): ModelControl[] => {
+  return (reasoningCapabilities(target, model) ?? []).flatMap((c): ModelControl[] => {
     if (c.type === "effort") {
       const values = c.values.filter(v => kind !== "mistral" || ["none", "high"].includes(v));
       return values.length ? [{ id: "effort", name: "Effort", values: values.map(value => ({ value, name: value })) }] : [];

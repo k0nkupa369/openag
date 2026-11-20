@@ -337,21 +337,28 @@ describe("slack channel", () => {
 
   test("a silent (half-open) socket is pinged, then terminated and reconnected; a socket that answers is left alone", async () => {
     configure();
+    // Wait for the outcome rather than a fixed sleep: a loaded CI machine can delay timers well past a few ping intervals.
+    const until = async (done: () => boolean, ms = 5000) => { const end = Date.now() + ms; while (!done() && Date.now() < end) await new Promise((r) => setTimeout(r, 10)); };
     const dead = harness({ liveness: { pingMs: 10, timeoutMs: 45 } });
     await connected(dead);
-    await new Promise((r) => setTimeout(r, 150));
+    await until(() => dead.sockets.length > 1);
     expect(dead.sockets[0]!.pings).toBeGreaterThan(0);
     expect(dead.sockets[0]!.terminated).toBe(true);
     expect(dead.sockets.length).toBeGreaterThan(1);
     expect(dead.slack.status().lastError).toMatch(/went silent|could not/);
     dead.slack.stop();
 
-    const alive = harness({ liveness: { pingMs: 10, timeoutMs: 45 } });
+    // The timeout leaves room for CI scheduling delay; observing for over twice that long still proves an answering
+    // socket survives several timeout windows, where a silent one would have been terminated.
+    const alive = harness({ liveness: { pingMs: 10, timeoutMs: 300 } });
     alive.slack.reload();
     await flush();
     alive.sockets[0]!.autoPong = true;
     alive.sockets[0]!.emit({ type: "hello" });
-    await new Promise((r) => setTimeout(r, 150));
+    const watched = Date.now();
+    await until(() => Date.now() - watched > 700 && alive.sockets[0]!.pings >= 3);
+    expect(alive.sockets[0]!.pings).toBeGreaterThanOrEqual(3);
+    expect(alive.sockets[0]!.terminated).toBeFalsy();
     expect(alive.sockets).toHaveLength(1);
     expect(alive.slack.status()).toMatchObject({ connected: true, lastFrameAt: expect.any(Number) });
     alive.slack.stop();

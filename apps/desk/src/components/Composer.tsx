@@ -6,7 +6,7 @@ import { Popover, PopoverContent } from "./ui/popover";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 import { ApiError, messageOf, type Api } from "../api";
-import type { Attachment, BotInfo, LedgerEvent, MessageReply } from "../types";
+import type { Attachment, BotInfo, MessageReply } from "../types";
 import { ChatModelSettings, type ChatModelSettingsHandle } from "./ChatModelSettings";
 import { BotAvatar } from "./BotAvatar";
 import { ArrowUp, Plus, X, RotateCw, File, Mic, Square } from "lucide-react";
@@ -26,12 +26,16 @@ interface Option {
   description: string;
 }
 
-export interface ComposerHandle { isSending():boolean; hasDraft():boolean; focus():void; addFiles(files: File[], pointerAdded?: boolean): void; replyTo(message:LedgerEvent):void }
+export interface ComposerHandle { isSending():boolean; hasDraft():boolean; focus():void; addFiles(files: File[], pointerAdded?: boolean): void }
+/** What the next message replies to. Answering a question continues the request that asked it. */
+export type ReplyTarget =
+  | { kind: "message"; messageId: number; quote: Quote }
+  | { kind: "question"; questionId: string; revision: number; quote: Quote };
+type Quote = Pick<MessageReply, "actor" | "text">;
 interface Upload { pointerAdded?: boolean; key: string; file: File; preview?: string; attachment?: Attachment; error?: string; removing?: boolean }
-export const Composer = forwardRef<ComposerHandle, { api: Api; roomId: string; onSend: (text: string, attachments: string[], replyToMessageId?:number) => Promise<void>; replyTo?:{botId:string;prompt:string;onCancel:()=>void}; bots?: readonly BotInfo[]; direct?:boolean; defaultBotId?: string; permissionBotId?:string; subscribe?:(listener:StreamListener)=>()=>void; routed?: boolean; canManage?: boolean; disabled?: boolean; showSuggestions?: boolean; onAttachmentAvailabilityChange?: (available: boolean) => void }>(function Composer({ api, roomId, onSend, replyTo, bots = [], direct = false, permissionBotId, subscribe, defaultBotId, routed = false, canManage = false, disabled = false, showSuggestions = false, onAttachmentAvailabilityChange }, ref) {
+export const Composer = forwardRef<ComposerHandle, { api: Api; roomId: string; onSend: (text: string, attachments: string[]) => Promise<void>; reply?: ReplyTarget; onCancelReply?: () => void; bots?: readonly BotInfo[]; direct?:boolean; defaultBotId?: string; permissionBotId?:string; subscribe?:(listener:StreamListener)=>()=>void; routed?: boolean; canManage?: boolean; disabled?: boolean; showSuggestions?: boolean; onAttachmentAvailabilityChange?: (available: boolean) => void }>(function Composer({ api, roomId, onSend, reply, onCancelReply, bots = [], direct = false, permissionBotId, subscribe, defaultBotId, routed = false, canManage = false, disabled = false, showSuggestions = false, onAttachmentAvailabilityChange }, ref) {
   const permissionPicker=useRef<PermissionControlHandle>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  const [reply, setReply] = useState<MessageReply>();
   const [focused, setFocused] = useState(false);
   const pointerMotion = useRef(false);
   const heightMotion = useRef<Animation | null>(null);
@@ -61,13 +65,7 @@ export const Composer = forwardRef<ComposerHandle, { api: Api; roomId: string; o
     changeUploads([...uploadsRef.current, ...rows]);
     for (const row of rows) void upload(row);
   }
-  useImperativeHandle(ref, () => ({ addFiles, isSending:()=>sendingRef.current, hasDraft:()=>Boolean(areaRef.current?.value||uploadsRef.current.length||reply), focus:()=>{if(sendingRef.current)return;setReply(undefined);areaRef.current?.focus();}, replyTo(message) {
-    if (disabled || sendingRef.current || message.roomId !== roomId) return;
-    replyTo?.onCancel();
-    const payload = message.payload as { text?: string };
-    setReply({ messageId: message.id, actor: message.actor, text: payload.text?.trim() ? payload.text.slice(0, 1200) : '[Attachments]' });
-    areaRef.current?.focus();
-  } }));
+  useImperativeHandle(ref, () => ({ addFiles, isSending:()=>sendingRef.current, hasDraft:()=>Boolean(areaRef.current?.value||uploadsRef.current.length), focus:()=>{if(!sendingRef.current)areaRef.current?.focus();} }));
   async function remove(row: Upload) {
     if (sendingRef.current || removing.current.has(row.key)) return;
     removing.current.add(row.key);
@@ -89,7 +87,7 @@ export const Composer = forwardRef<ComposerHandle, { api: Api; roomId: string; o
   const [modelAttention, setModelAttention] = useState(false);
   const modelSettings = useRef<ChatModelSettingsHandle>(null);
   const conversationBot=direct?bots.find(bot=>bot.id===defaultBotId):bots.length===1?bots[0]:undefined;
-  const modelBot = replyTo?bots.find(bot=>bot.id===replyTo.botId):composerModelBot(text, bots, defaultBotId, routed);
+  const modelBot = reply?.kind==="question"?bots.find(bot=>bot.id===reply.quote.actor):composerModelBot(text, bots, defaultBotId, routed);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
@@ -108,7 +106,7 @@ export const Composer = forwardRef<ComposerHandle, { api: Api; roomId: string; o
       : dictation.phase === "transcribing" ? "Transcribing…"
         : null;
   const showDictationPrompt = dictation.phase !== "idle" && text.length === 0;
-  const expanded = !!replyTo || !!reply || focused || text.length > 0 || uploads.length > 0 || dictation.phase !== "idle" || !!dictation.error || !!error || modelBlocked || modelAttention || sending;
+  const expanded = !!reply || focused || text.length > 0 || uploads.length > 0 || dictation.phase !== "idle" || !!dictation.error || !!error || modelBlocked || modelAttention || sending;
   useLayoutEffect(() => {
     const element = formRef.current;
     if (!element) return;
@@ -189,8 +187,7 @@ export const Composer = forwardRef<ComposerHandle, { api: Api; roomId: string; o
     setSending(true);
     setError(null);
     try {
-      await onSend(body, uploads.map(row => row.attachment!.id), reply?.messageId);
-      setReply(undefined);
+      await onSend(body, uploads.map(row => row.attachment!.id));
       setText("");
       for (const row of uploadsRef.current) if (row.preview) URL.revokeObjectURL(row.preview);
       changeUploads([]);
@@ -222,7 +219,7 @@ export const Composer = forwardRef<ComposerHandle, { api: Api; roomId: string; o
         return;
       }
     }
-    if (e.key === "Escape" && reply && !sendingRef.current) { e.preventDefault(); setReply(undefined); return; }
+    if (e.key === "Escape" && reply && !sendingRef.current) { e.preventDefault(); onCancelReply?.(); return; }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void send();
@@ -253,7 +250,7 @@ export const Composer = forwardRef<ComposerHandle, { api: Api; roomId: string; o
         {conversationBot ? `Message ${conversationBot.name}` : "Message the room"}
       </label>
       <Popover open={open} onOpenChange={(next, details) => { if (!next && details.reason === "outside-press" && details.event.target === areaRef.current) { details.cancel(); return; } if (!next && mention) setDismissed(`${mention.start}:${mention.query}`); }}>
-      {open && <PopoverContent aria-label="Agent mentions" anchor={areaRef} initialFocus={false} finalFocus={false} side="top" align="start" className="w-(--anchor-width) p-1">
+      {open && <PopoverContent aria-label="Agent mentions" anchor={areaRef} initialFocus={false} finalFocus={false} side="top" align="start" className="w-(--anchor-width) p-1 animate-none!">
         <ul className="m-0 max-h-[280px] list-none overflow-auto p-0" role="listbox" id="mention-list" aria-label={direct?"Agents":"Bots in this room"}>
           {options.map((o, i) => (
             <li key={o.id} role="option" aria-selected={i === current} id={`mention-${o.id}`}>
@@ -276,10 +273,9 @@ export const Composer = forwardRef<ComposerHandle, { api: Api; roomId: string; o
       </Popover>
       <input ref={picker} type="file" multiple accept=".txt,.md,.csv,.json,.png,.jpg,.jpeg" className="sr-only" tabIndex={-1} aria-label="Choose attachments" onChange={e => { addFiles(Array.from(e.target.files ?? []), pointerPicker.current); pointerPicker.current = false; e.target.value = ""; }} />
       <InputGroup compact={!expanded} className={cn(!expanded && "gap-2 px-2")}>
-      {replyTo&&<InputGroupAddon align="block-start"><span className="min-w-0 flex-1 truncate" role="status">Replying to: {replyTo.prompt}</span><InputGroupButton type="button" variant="ghost" size="sm" onClick={replyTo.onCancel} disabled={sending}>New message</InputGroupButton></InputGroupAddon>}
       {reply && <InputGroupAddon align="block-start" aria-label="Reply preview">
-        <div className="min-w-0 flex-1"><p className="mb-1 text-xs">Replying to</p><MessageQuote reply={reply} bots={bots} /></div>
-        <InputGroupButton type="button" variant="ghost" size="icon-xs" aria-label="Cancel reply" disabled={sending} onClick={() => { setReply(undefined); areaRef.current?.focus(); }}><X /></InputGroupButton>
+        <div className="min-w-0 flex-1" role="status"><p className="mb-1 text-xs">Replying to</p><MessageQuote reply={reply.quote} bots={bots} /></div>
+        <InputGroupButton type="button" variant="ghost" size="icon-xs" aria-label="Cancel reply" disabled={sending} onClick={() => { onCancelReply?.(); areaRef.current?.focus(); }}><X /></InputGroupButton>
       </InputGroupAddon>}
       {dictationLabel && <InputGroupAddon align="block-start" className={cn(showDictationPrompt && "sr-only")}><span role="status" className="text-xs text-muted-foreground">{dictationLabel}</span></InputGroupAddon>}
       {uploads.length > 0 && <InputGroupAddon align="block-start"><ul className="m-0 flex min-w-0 flex-wrap gap-2 p-0" aria-label="Attachments">{uploads.map(row => <li key={row.key} className={cn("min-w-0 max-w-full list-none", row.pointerAdded && "desk-attachment-entry")}>

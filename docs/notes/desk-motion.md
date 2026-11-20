@@ -9,3 +9,11 @@ Attachments: only newly pointer-picked/native-dropped chips enter (opacity0→1,
 Drop cue: semantic outline overlay, non-interactive and aria-hidden, opacity transition125ms. Fine/hover pointers only. Eligibility comes from the same Composer guard used by addFiles, without new permission restrictions or duplicated validation. Files-only drag, nested enter/leave tracking, drop/cancel/blur/navigation/availability cleanup. Cue indicates where a drop can be attempted, never validated upload success. Actual addFiles/server validation remains authoritative.
 
 Verification seam: built desk → real disposable gateway, controlled operations, no live providers. Standalone behavioural assertions plus CUA browser motion/geometry/focus,390/900/1440 light/dark, normal/reduced motion. No unit/Jest/Vitest runners. Update delivered help and verify bot knowledge. Each slice is independently demonstrated/committed; finish local Standards/Spec then installed codex review --base origin/main, fix substantive findings and re-review. No publication, merge or deployment under this approval.
+
+## Keyboard-instant popups, sheets and jump-to-latest (20 November 2026)
+
+Keyboard-driven UI appears on the first frame. The Cmd+K palette and its backdrop never animate (`CommandDialog` passes `animate-none!` to both; other dialogs keep their motion). The @mention picker never animates. Menus, popovers and tooltips skip their animation whenever Base UI sets `data-instant`: Enter or Space opens (`click`), Escape closes (`dismiss`), focus opens (`focus`) and adjacent tooltip opens (`delay`). Pointer opens keep the 100ms motion. Select is unchanged.
+
+Sheets open over 200ms and close over 150ms on the house curve, panel and backdrop alike. The panel transitions only opacity and `translate` (what Tailwind v4 `translate-*` sets). Jump-to-latest leaves over 150ms on the house curve; its 200ms entry is unchanged.
+
+`node scripts/verify-rendered-acceptance.mjs motion` asserts these in Chromium with normal motion preferences.

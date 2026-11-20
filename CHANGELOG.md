@@ -2,6 +2,27 @@
 
 All notable changes to OpenAg are recorded here. Versions follow [Semantic Versioning](https://semver.org); before 1.0, minor versions may change interfaces.
 
+## 0.7.3
+
+### Models
+- A rejected model request now says why. The chat error shows the provider's status, error code and message (redacted) after `provider_error`, instead of only "Hosted model request failed".
+- Newer GPT-6 OpenAI models that the bundled catalogue does not list yet, such as `gpt-6.1-terra` and `gpt-6.2-astra`, offer an Effort setting (low, medium, high, xhigh, max).
+- Saved model choices refresh automatically when OpenAg's capability rules change, so an update can no longer leave stale options in place.
+
+### Conversations
+- Replying to a message and answering an agent's question use the same quoted reply preview; Cancel reply or Escape clears either.
+- A message with only attachments no longer shows an empty bubble above its files.
+- "Load earlier messages" sits in its own bordered row above the transcript.
+- On phones, the activity summary keeps the agent's name and shortens the counts instead.
+- The composer's icons are back to the standard size, and the "Some model sources are unavailable" notice no longer appears inside the composer (model refresh stays in Settings → Models).
+
+### Desk
+- Keyboard-opened menus, popovers, tooltips, the Cmd+K palette and the @mention picker appear instantly. Mouse opens keep their short animation.
+- Sheets open in 200ms and close in 150ms on the desk's standard easing, and the jump-to-latest button leaves faster.
+- The sign-in title is a page heading for screen readers, and sign-in errors appear at the top of the card.
+- Profile: the image zoom slider's handle stays on its track, and busy buttons show a spinner.
+- Agent settings help text uses the standard description style.
+
 ## 0.7.2
 
 - The public repository is now [k0nkupa369/openag](https://github.com/k0nkupa369/openag). Clone from there and report security issues through its advisories page. Releases before 0.7.2 are not carried over; 0.7.2 matches 0.7.1 apart from these references.

@@ -9,14 +9,13 @@ import { BotAvatar } from "./BotAvatar";
 import { BookOpen, BrainCircuit, FileText, Pencil } from "lucide-react";
 import { BotSettingRow, BotSettingsNavigation } from "./BotSettingRow";
 import { AvatarEditor } from "./AvatarEditor";
-import { Field, FieldGroup, FieldLabel } from "./ui/field";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "./ui/field";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "./ui/dialog";
 
-const MONO = "font-mono text-[12px] leading-[18px] text-muted-foreground";
 const ERROR = "mt-1.5 mb-0 text-destructive";
 const NOTICE = "mb-2 mt-0 text-[var(--warn)] [overflow-wrap:anywhere]";
 const GROUP_HEAD = "m-0 flex items-center gap-2 text-sm font-normal text-muted-foreground";
@@ -172,7 +171,7 @@ export function BotEditor({ api, bot, onSaved, children }: { api: Api; bot: BotI
         </Dialog>
         <div>
           <div className="flex flex-wrap items-center gap-2"><div className="text-[22px] leading-7 font-semibold tracking-[-0.01em]">{name}</div>{bot.isDefault && <Badge variant="secondary">Default</Badge>}</div>
-          <div className={MONO}>
+          <div className="font-mono text-[12px] leading-[18px] text-muted-foreground">
             {bot.adapter ? `${bot.adapter} · ` : ""}
             {bot.runtime} · @{bot.handle}
           </div>
@@ -191,13 +190,13 @@ export function BotEditor({ api, bot, onSaved, children }: { api: Api; bot: BotI
             <Button variant="outline" disabled={!handleDirty || handleBusy || locked || !settings} onClick={() => void saveHandle()}>Change handle</Button>
           </div>
           {handleError && <Alert variant="destructive" className={ERROR}><AlertDescription>{handleError}</AlertDescription></Alert>}
-          <p className={MONO}>Previous handles stay reserved to this agent.</p>
+          <FieldDescription>Previous handles stay reserved to this agent.</FieldDescription>
         </Field>
         <Field className="col-span-full">
           <FieldLabel htmlFor="bdesc">Description</FieldLabel>
           <Input id="bdesc" type="text" value={description} disabled={busy || locked || !settings} maxLength={200} onChange={(e) => setDescription(e.target.value)} />
         </Field>
-        {bot.runtime==='api'&&<Field><FieldLabel htmlFor="bstep">Maximum model steps</FieldLabel><Input id="bstep" type="number" min={1} max={100} step={1} value={maxSteps} disabled={busy||locked||!settings} onChange={e=>setMaxSteps(Number(e.target.value))}/><p className={MONO}>Per turn. Tool execution is separately limited to 40 calls.</p></Field>}
+        {bot.runtime==='api'&&<Field><FieldLabel htmlFor="bstep">Maximum model steps</FieldLabel><Input id="bstep" type="number" min={1} max={100} step={1} value={maxSteps} disabled={busy||locked||!settings} onChange={e=>setMaxSteps(Number(e.target.value))}/><FieldDescription>Per turn. Tool execution is separately limited to 40 calls.</FieldDescription></Field>}
       </FieldGroup>
       <section className="mt-6 flex flex-col gap-2.5" aria-label="Brain">
         <h3 className={GROUP_HEAD}><BrainCircuit aria-hidden="true" className="size-4 shrink-0" />Brain</h3>
@@ -227,7 +226,7 @@ export function BotEditor({ api, bot, onSaved, children }: { api: Api; bot: BotI
       </section>
       {(dirty || saved) && <footer className="sticky bottom-0 flex flex-wrap items-center gap-2 border-t border-border bg-background py-3">
         <span className="grow" />
-        {saved && !dirty && <span className={MONO} role="status">Saved</span>}
+        {saved && !dirty && <span className="text-sm text-muted-foreground" role="status">Saved</span>}
         <Button variant="outline" type="button" disabled={!dirty || busy} onClick={discard}>Discard</Button>
         <Button type="button" disabled={!dirty || busy} onClick={() => void save()}>{inlineSettings ? "Save agent settings" : "Save"}</Button>
       </footer>}

@@ -4,7 +4,7 @@ import { adapterInstalled, adapterPackage } from "./models.js";
 import { canonical } from "./action-receipts.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { createModelDiscovery, modelIdentity, ModelError, reasoningOptions, validateReasoning, type ModelChoices, type ModelTarget, type Reasoning } from "./hostedmodels.js";
+import { createModelDiscovery, HOSTED_CAPABILITY_REVISION, modelIdentity, ModelError, reasoningOptions, validateReasoning, type ModelChoices, type ModelTarget, type Reasoning } from "./hostedmodels.js";
 import { modelProviders, registeredProvider, registerProviderSecrets, providerCredential } from "./providers.js";
 export { ModelError } from "./hostedmodels.js";
 export type { ModelChoices, ModelTarget, Reasoning, ModelControl } from "./hostedmodels.js";
@@ -42,7 +42,7 @@ export function createBotModels(deps: { db: Db; ledger: Ledger; acp: AcpModels; 
   const hosted = createModelDiscovery(env, doFetch);
   const creationTargets = () => [{ id: "claude", name: "Claude Code", configured: adapterInstalled("claude-code") }, { id: "codex", name: "Codex", configured: adapterInstalled("codex") }, ...modelProviders().filter(p => p.chat).map(p => ({ id: p.id, name: p.name, configured: !!providerCredential(p.id, env) })), { id: "ollama", name: "Ollama", configured: true }];
   const packageVersion = (name: string): string => { try { return String(createRequire(import.meta.url)(`${name}/package.json`).version); } catch { return "unknown"; } };
-  const catalogue = createModelCatalogue({ db: deps.db, targets: () => [...creationTargets(), ...modelProviders().filter(p => !p.chat && p.decisions).map(p => ({ id: p.id, name: p.name, configured: !!providerCredential(p.id, env) }))], prepare: hosted.invalidateMetadata, sourceKey: target => createHash("sha256").update(canonical([target, target === "ollama" ? env.OPENAG_OLLAMA_URL ?? "http://127.0.0.1:11434" : providerCredential(target, env) ?? null, target === "claude" || target === "codex" ? packageVersion(adapterPackage(target === "claude" ? "claude-code" : "codex")) : packageVersion("@mastra/core")])).digest("hex"), now: deps.now, async load(target, signal) {
+  const catalogue = createModelCatalogue({ db: deps.db, targets: () => [...creationTargets(), ...modelProviders().filter(p => !p.chat && p.decisions).map(p => ({ id: p.id, name: p.name, configured: !!providerCredential(p.id, env) }))], prepare: hosted.invalidateMetadata, sourceKey: target => createHash("sha256").update(canonical([target, target === "ollama" ? env.OPENAG_OLLAMA_URL ?? "http://127.0.0.1:11434" : providerCredential(target, env) ?? null, target === "claude" || target === "codex" ? packageVersion(adapterPackage(target === "claude" ? "claude-code" : "codex")) : [packageVersion("@mastra/core"), HOSTED_CAPABILITY_REVISION]])).digest("hex"), now: deps.now, async load(target, signal) {
     if (target !== "claude" && target !== "codex") return hosted.discoverAll(target, signal);
     const bot: Bot = { id: `catalogue-${target}`, handle: `catalogue-${target}`, name: "Model refresh", runtime: "acp", model: null, config: {} };
     if (deps.acp.discoverAll) return deps.acp.discoverAll(bot, target);

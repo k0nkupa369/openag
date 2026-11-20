@@ -45,23 +45,15 @@ Ticket IDs are not unique across campaigns. Some IDs were reused (for example OA
 - OA-427 Available file-drop target in the composer ([desk-motion.md](docs/notes/desk-motion.md)).
 - OA-395 Reviewed read-only Composio batches complete instead of leaving Unknown receipts ([mcp.md](docs/notes/mcp.md)).
 - OA-215 GitHub polling trigger without a tunnel, `repo` mode ([github-poll.md](docs/notes/github-poll.md)). Notifications mode is not implemented because it needs a classic token.
+- Rendered acceptance, 18 Nov 2026 ([rendered-acceptance.md](docs/notes/rendered-acceptance.md)): OA-477 questions and decisions in chat, OA-476 replies to a message, OA-473 provider forms in chat, OA-474 invocation result separate from effect verification, OA-469 receipt inspection removed, OA-460 user name and avatar, OA-462 uploaded profile image, OA-459 automatic reflection memory, and OA-466 conversation rendering and typing work (owner confirmed the remote Mac feels faster, 20 Nov). Physical phone, Safari, PWA and screen-reader use remain unverified.
 - OA-306 Desk WebRTC transport and pairing: a phone joins, uses the desk over WebRTC, reconnects, is revoked and re-pairs; checked with an Android emulator on a second machine on one network ([webrtc.md](docs/notes/webrtc.md)). Crossing carrier NAT moves to OA-307.
 
 ## Built, awaiting acceptance
 
 The source is on `main` and in the 0.5.x releases. Each item stays unticked until its remaining gate passes; the notes linked below record what was checked.
 
-Rendered desktop and phone comparison was blocked for all of these because Cua reported "Local browser use is disabled in Work settings". Enabling local browser use and running one rendered pass would clear the visual gate for the whole group:
-- OA-477 Handle questions and decisions directly in chat ([chat-interactions.md](docs/notes/chat-interactions.md)).
-- OA-476 Reply to a specific chat message ([conversation-model.md](docs/notes/conversation-model.md)).
-- OA-466 Reduce conversation rendering and typing work; also needs the owner to confirm the remote Mac feels faster ([conversation-rendering.md](docs/notes/conversation-rendering.md)).
-- OA-474 Separate MCP invocation results from effect verification ([mcp-invocation-results.md](docs/notes/mcp-invocation-results.md)).
-- OA-473 Show provider response forms in chat and notify the owner.
-- OA-469 Remove manual receipt inspection and its blocking workflow ([receipt-inspection-removal.md](docs/notes/receipt-inspection-removal.md)).
-- OA-460 Change the user name and avatar.
-- OA-462 Upload and adjust a user profile image.
-- OA-459 Save reflection memory automatically ([reflection.md](docs/notes/reflection.md)).
-- OA-390 Replace agent avatars with Open Bot Avatar; real-browser visual and performance check (ID reused; the Composio entry under OA-390 is shipped) ([avatars/](docs/notes/avatars/)).
+The rendered desktop/phone check now runs in real Chromium (`scripts/verify-rendered-acceptance.mjs`, [rendered-acceptance.md](docs/notes/rendered-acceptance.md)). One item keeps a gate beyond it:
+- OA-390 Replace agent avatars with Open Bot Avatar: rendered check passed; the real-browser performance check remains ([avatars/](docs/notes/avatars/)).
 
 Other remaining gates:
 - OA-475 Isolate uncertain action conflicts across conversations: final Claude subscription re-verification was quota-blocked ([receipt-isolation-acceptance.md](docs/notes/receipt-isolation-acceptance.md)).

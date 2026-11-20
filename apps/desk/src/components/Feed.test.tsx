@@ -29,6 +29,13 @@ describe("Feed", () => {
     expect(container.querySelector(".bot-avatar")?.getAttribute("data-bot")).toBe("primary");
   });
 
+  it("does not draw an empty text bubble for an attachment-only message", () => {
+    const file = { id: "f1", name: "notes.txt", mimeType: "text/plain", bytes: 15 };
+    const { container } = render(<Feed events={[ev(1, "message", { text: "", attachments: [file] }), ev(2, "message", { text: "With text", attachments: [file] })]} />);
+    const contents = [...container.querySelectorAll('[data-slot="bubble-content"]')].map(el => el.textContent);
+    expect(contents).toEqual(["With text"]);
+  });
+
   it("renders hostile message and bot_output text as text", () => {
     const { container } = render(
       <Feed

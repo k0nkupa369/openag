@@ -1,7 +1,7 @@
 import type { BotInfo, MessageReply } from '../types';
 import { useProfile } from '../profile';
 
-export function MessageQuote({ reply, bots = [] }: { reply: MessageReply; bots?: readonly BotInfo[] }) {
+export function MessageQuote({ reply, bots = [] }: { reply: Pick<MessageReply, 'actor' | 'text'>; bots?: readonly BotInfo[] }) {
   const { profile } = useProfile();
   const name = reply.actor === 'user' ? profile.name : bots.find(bot => bot.id === reply.actor)?.name ?? reply.actor;
   return <blockquote aria-label={`Quoted message from ${name}`} className="min-w-0 border-l-2 border-border pl-3 text-sm">

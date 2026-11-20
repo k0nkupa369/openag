@@ -9,8 +9,9 @@ import { SettingsHeader, SettingsSection } from "./SettingsLayout";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent } from "./ui/dialog";
-import { Field, FieldLabel } from "./ui/field";
+import { Field, FieldLabel, FieldSet } from "./ui/field";
 import { Input } from "./ui/input";
+import { Spinner } from "./ui/spinner";
 
 export function ProfileSettings({ canManage }: { canManage: boolean }) {
   const { profile, loading, error: loadError, save } = useProfile();
@@ -54,25 +55,24 @@ export function ProfileSettings({ canManage }: { canManage: boolean }) {
   return <section className="flex min-w-0 flex-col gap-6" aria-labelledby="profile-title">
     <SettingsHeader id="profile-title" title="Profile" description="Choose the name and avatar shown with your messages." />
     {(error || loadError) && <Alert variant="destructive"><AlertDescription>{error || loadError}</AlertDescription></Alert>}
-    {reading && <p role="status">Reading image…</p>}
     {loading && <p role="status">Loading profile…</p>}
     {!canManage && <p className="text-sm text-muted-foreground">Full access is required to edit the profile.</p>}
     <SettingsSection icon="settings" title="Your profile">
       <form className="flex flex-col gap-5" onSubmit={submit} onChange={() => setSaved(false)}>
-        <fieldset disabled={!canManage || loading || busy || reading || !!loadError} className="m-0 flex min-w-0 flex-col gap-5 border-0 p-0">
+        <FieldSet disabled={!canManage || loading || busy || reading || !!loadError} className="min-w-0 gap-5">
           <div className="flex flex-wrap items-center gap-3">
             <UserAvatar profile={draft} size={64} />
             <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" aria-label="Upload avatar image" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void choose(file); }} />
-            <Button type="button" variant="outline" onClick={() => fileInput.current?.click()}>Upload image</Button>
+            <Button type="button" variant="outline" disabled={reading} onClick={() => fileInput.current?.click()}>{reading ? <><Spinner data-icon="inline-start" />Reading image…</> : "Upload image"}</Button>
             {draft.avatar && <Button type="button" variant="ghost" onClick={() => { setDraft(current => ({ ...current, avatar: null })); setSaved(false); }}>Remove image</Button>}
           </div>
           <p className="m-0 text-sm text-muted-foreground">JPG, PNG or WebP, up to 5 MiB. Saved as a small cropped image.</p>
           <Field><FieldLabel htmlFor="profile-name">Name</FieldLabel><Input id="profile-name" autoComplete="nickname" required maxLength={40} value={draft.name} onChange={event => setDraft(current => ({ ...current, name: event.target.value }))} /></Field>
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={!dirty || !draft.name.trim()}>{busy ? "Saving…" : "Save profile"}</Button>
+            <Button type="submit" disabled={busy || !dirty || !draft.name.trim()}>{busy ? <><Spinner data-icon="inline-start" />Saving…</> : "Save profile"}</Button>
             {dirty && <Button type="button" variant="ghost" onClick={() => { setDraft(profile); setBase(profile); setError(null); setSaved(false); }}>Cancel</Button>}
           </div>
-        </fieldset>
+        </FieldSet>
         {saved && <p role="status" className="text-sm text-muted-foreground">Profile saved.</p>}
       </form>
     </SettingsSection>

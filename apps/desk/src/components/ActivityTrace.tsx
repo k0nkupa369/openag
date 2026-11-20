@@ -50,7 +50,7 @@ export function ActivityTrace({ events, items, bots = [], api, canManage = false
       const unknown = states.filter(state => state.unknown).length, failed = states.filter(state => state.status === "error").length;
       const status = states.some(state => state.status === "error") ? "error" : states.some(state => state.status === "running") ? "running" : undefined;
       return <TraceCollapsible key={key} defaultOpen={status === "running"}>
-        <TraceCollapsibleTrigger><TraceLine status={status}><TraceIcon><Wrench /></TraceIcon><TraceTitle>{actor} · {status === "running" ? "Working" : "Activity"}</TraceTitle><TraceDescription>{operations ? `${operations} operation${operations === 1 ? "" : "s"}` : "Turn updates"}{failed ? ` · ${failed} failed` : ""}{unknown ? ` · ${unknown} unconfirmed` : ""}</TraceDescription></TraceLine></TraceCollapsibleTrigger>
+        <TraceCollapsibleTrigger><TraceLine status={status}><TraceIcon><Wrench /></TraceIcon><TraceTitle>{actor} · {status === "running" ? "Working" : "Activity"}</TraceTitle><TraceDescription className="min-w-0 flex-1 truncate">{operations ? `${operations} operation${operations === 1 ? "" : "s"}` : "Turn updates"}{failed ? ` · ${failed} failed` : ""}{unknown ? ` · ${unknown} unconfirmed` : ""}</TraceDescription></TraceLine></TraceCollapsibleTrigger>
         <TraceCollapsibleContent><RecordedFiles items={group} /><Trace>
           {group.map((item, index) => {
             const { event, history } = item, payload = fields(event.payload), state = states[index]!;

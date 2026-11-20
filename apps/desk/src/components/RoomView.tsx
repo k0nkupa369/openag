@@ -9,7 +9,7 @@ import { type RoomPanelTab, type BotSettingSection, hrefFor } from "../route";
 import { useStream } from "../stream";
 import { useWorkItem, useWorkList } from "../work-hooks";
 import type { Approval, BotInfo, Decision, Room, WorkQuestion, LedgerEvent } from "../types";
-import { Composer, type ComposerHandle } from "./Composer";
+import { Composer, type ComposerHandle, type ReplyTarget } from "./Composer";
 import { Feed } from "./Feed";
 import { RoomSummary } from "./RoomRail";
 import { WorkCard, WorkInspector } from "./WorkView";
@@ -116,24 +116,33 @@ export function RoomView({
   const replySelection=useRef(0);
   const [dismissingQuestion,setDismissingQuestion]=useState<string>();
   const [replyError,setReplyError]=useState<string>();
-  const [selectedReply,setSelectedReply]=useState<WorkQuestion|null|undefined>();
+  // undefined: nothing chosen yet, so a lone open question may be preselected. null: the owner cleared the target.
+  const [selectedReply,setSelectedReply]=useState<ReplyTarget|null|undefined>();
   useEffect(()=>setSelectedReply(undefined),[roomId]);
   const questions=requests.requests.flatMap(request=>request.question?[request.question]:[]);
-  useEffect(()=>{if(canManage&&selectedReply===undefined&&questions.length===1&&!requests.cursor&&questions[0].roomId===roomId&&!composer.current?.hasDraft())setSelectedReply(questions[0]);},[questions,selectedReply,requests.cursor,roomId,canManage]);
-  const reply=canManage&&selectedReply?.roomId===roomId?selectedReply:null;
-  const selectReply=(question:WorkQuestion)=>{if(!canManage||composer.current?.isSending())return;replySelection.current++;setReplyError(undefined);setSelectedReply(question);composer.current?.focus();};
+  const answering=(question:WorkQuestion):ReplyTarget=>({kind:'question',questionId:question.id,revision:question.revision,quote:{actor:question.botId,text:question.prompt??question.context}});
+  useEffect(()=>{if(canManage&&selectedReply===undefined&&questions.length===1&&!requests.cursor&&questions[0].roomId===roomId&&!composer.current?.hasDraft())setSelectedReply(answering(questions[0]));},[questions,selectedReply,requests.cursor,roomId,canManage]);
+  const reply=selectedReply?.kind==='question'&&!canManage?null:selectedReply??null;
+  const composerDisabled=status!=="live"||loading||!!error||!!ledger.error;
+  const selectReply=(question:WorkQuestion)=>{if(!canManage||composer.current?.isSending())return;replySelection.current++;setReplyError(undefined);setSelectedReply(answering(question));composer.current?.focus();};
   const dismissQuestion=async(question:WorkQuestion)=>{
     if(!canManage||dismissingQuestion||composer.current?.isSending())return;
     replySelection.current++;setDismissingQuestion(question.id);setReplyError(undefined);
     try{
       await api.dismissQuestion(roomId,question.id,question.revision);
-      setSelectedReply(current=>current?.id===question.id?null:current);
+      setSelectedReply(current=>current?.kind==='question'&&current.questionId===question.id?null:current);
       requests.refresh();
     }catch(error){setReplyError(messageOf(error));}
     finally{setDismissingQuestion(undefined);}
   };
   const cancelReply=()=>{if(composer.current?.isSending())return;replySelection.current++;setReplyError(undefined);setSelectedReply(null);};
-  const quoteMessage=(message:LedgerEvent)=>{if(composer.current?.isSending())return;cancelReply();composer.current?.replyTo(message);};
+  const quoteMessage=(message:LedgerEvent)=>{
+    if(composerDisabled||composer.current?.isSending()||message.roomId!==roomId)return;
+    replySelection.current++;setReplyError(undefined);
+    const text=(message.payload as {text?:string}).text;
+    setSelectedReply({kind:'message',messageId:message.id,quote:{actor:message.actor,text:text?.trim()?text.slice(0,1200):'[Attachments]'}});
+    composer.current?.focus();
+  };
   const replyToMessage=async(message:LedgerEvent)=>{
     if(composer.current?.isSending())return;
     const id=message.actor!=='user'?(message.payload as {questionId?:string}).questionId:undefined;
@@ -146,10 +155,10 @@ export function RoomView({
     }catch(error){if(selected===replySelection.current)setReplyError(messageOf(error));}
   };
   const visibleQuestions=new Set(ledger.events.flatMap(event=>{const id=(event.payload as {questionId?:unknown}|null)?.questionId;return event.type==='message'&&event.actor!=='user'&&typeof id==='string'?[id]:[];}));
-  const send = useCallback(async(text:string,attachments:string[],replyToMessageId?:number)=>{
+  const send = useCallback(async(text:string,attachments:string[])=>{
     replySelection.current++;
-    await api.sendMessage(roomId,text,attachments,replyToMessageId,reply?{id:reply.id,revision:reply.revision}:undefined);
-    if(reply){setSelectedReply(null);requests.refresh();}
+    await api.sendMessage(roomId,text,attachments,reply?.kind==='message'?reply.messageId:undefined,reply?.kind==='question'?{id:reply.questionId,revision:reply.revision}:undefined);
+    if(reply){setSelectedReply(null);if(reply.kind==='question')requests.refresh();}
   },[api,roomId,reply]);
   const directBot =
     room?.kind === "direct"
@@ -439,18 +448,17 @@ export function RoomView({
               api={api}
               roomId={roomId}
               onSend={send}
-              replyTo={reply?{botId:reply.botId,prompt:reply.prompt??reply.context,onCancel:cancelReply}:undefined}
+              reply={reply??undefined}
+              onCancelReply={cancelReply}
               showSuggestions={!ledger.loading && !ledger.events.some(event => event.type === "message" || event.type === "bot_output")}
               canManage={canManage}
-              permissionBotId={reply?.botId??directBot?.id??room?.leadBotId??undefined}
+              permissionBotId={(reply?.kind==='question'?reply.quote.actor:undefined)??directBot?.id??room?.leadBotId??undefined}
               subscribe={subscribe}
               direct={room?.kind==='direct'}
               bots={room?.kind==='direct'?bots:bots.filter(bot=>room?.members.includes(bot.id))}
               defaultBotId={directBot?.id ?? room?.leadBotId ?? undefined}
               routed={!directBot && !!room?.router && room.router !== "lead"}
-              disabled={
-                status !== "live" || loading || !!error || !!ledger.error
-              }
+              disabled={composerDisabled}
             />
           </div>
         </div>

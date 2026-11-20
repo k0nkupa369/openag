@@ -102,33 +102,35 @@ try{
  const mount=(canManage=true,client=api)=>act(async()=>reactRoot.render(React.createElement(StreamProvider,{token,onAuthFailure(){}},React.createElement(ProfileProvider,{api:client},React.createElement(SidebarProvider,null,React.createElement(RoomView,{key:String(canManage),api:client,roomId:'main',room:getRoom(f.db,'main'),bots,allBots:bots,rooms,error:null,approvals:[],onDecide(){throw Error('No action approval created');},canManage}))))));
  await mount();
  const replyButton=q=>[...document.querySelectorAll('button')].find(b=>(b.textContent==='Reply'||b.getAttribute('aria-label')==='Reply to message')&&b.closest('[data-slot="message"]')?.textContent.includes(q.prompt));
+ // A question answer uses the same quoted Reply preview and Cancel reply as a message reply.
+ const replyPreview=()=>document.querySelector('[aria-label="Reply preview"]'),replyTarget=()=>replyPreview()?.querySelector('blockquote')?.textContent;
  const firstMounted=(await requests()).requests.find(request=>request.question?.prompt).question;
- await until(()=>replyButton(firstMounted));await act(async()=>replyButton(firstMounted).click());await until(()=>document.body.textContent.includes('Replying to:'));
+ await until(()=>replyButton(firstMounted));await act(async()=>replyButton(firstMounted).click());await until(()=>replyTarget()?.includes(firstMounted.prompt));
  const replyArea=document.querySelector('textarea');
  await act(async()=>fireEvent.blur(replyArea));
  const replyToolbar=document.querySelector('[aria-label="Attach files"]').closest('[data-slot="input-group-addon"]');
  assert.equal(replyArea.value,'','Exercise an empty reply draft');
  assert.equal(replyToolbar.dataset.align,'block-end','An empty unfocused question reply must keep its controls in one footer row');
  assert.ok(!replyToolbar.classList.contains('contents'),'Reply controls must retain their flex container');
- await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='New message').click());assert.ok(!document.body.textContent.includes('Replying to:'));
+ await act(async()=>document.querySelector('[aria-label="Cancel reply"]').click());assert.ok(!replyPreview());
  const area=document.querySelector('textarea');await act(async()=>fireEvent.change(area,{target:{value:'A new ordinary message'}}));assert.equal(area.value,'A new ordinary message');
  // A later question must neither capture an unrelated draft nor replace an explicit target.
- let newestQuestion;await act(async()=>{newestQuestion=oldQuestion();});await until(()=>replyButton(newestQuestion));assert.ok(!document.body.textContent.includes('Replying to:'));assert.equal(area.value,'A new ordinary message');
+ let newestQuestion;await act(async()=>{newestQuestion=oldQuestion();});await until(()=>replyButton(newestQuestion));assert.ok(!replyPreview());assert.equal(area.value,'A new ordinary message');
  await act(async()=>replyButton(newestQuestion).click());
- await until(()=>document.body.textContent.includes('Replying to:'));
- const targetText=[...document.querySelectorAll('[role="status"]')].find(e=>e.textContent.startsWith('Replying to:')).textContent;
- let newestAlternate;await act(async()=>{newestAlternate=oldQuestion('alternate');});await until(()=>replyButton(newestAlternate));assert.equal([...document.querySelectorAll('[role="status"]')].find(e=>e.textContent.startsWith('Replying to:')).textContent,targetText);
+ await until(()=>replyTarget()?.includes(newestQuestion.prompt));
+ const targetText=replyTarget();
+ let newestAlternate;await act(async()=>{newestAlternate=oldQuestion('alternate');});await until(()=>replyButton(newestAlternate));assert.equal(replyTarget(),targetText);
  await act(async()=>replyButton(newestAlternate).click());await until(()=>document.querySelector('[aria-label="Model settings for alternate"]'));await act(async()=>fireEvent.change(area,{target:{value:'@boss This still answers alternate'}}));assert.ok(document.querySelector('[aria-label="Model settings for alternate"]'),'Reply target owns model controls even when answer mentions the lead');
  const answersBefore=seen.filter(c=>c.message.questionId).length;
  await act(async()=>fireEvent.submit(area.closest('form')));await until(()=>area.value==='');await settle();assert.equal(seen.filter(c=>c.message.questionId).length,answersBefore+1,'Composer submits one explicit continuation');assert.equal(seen.at(-1).bot,'alternate');
  // A failed in-flight answer retains its target despite clicks on another Reply.
  const originalSend=api.sendMessage;let rejectSend;api.sendMessage=()=>new Promise((resolve,reject)=>{rejectSend=reject;});
- await act(async()=>replyButton(newestQuestion).click());await until(()=>document.body.textContent.includes('Replying to:'));await act(async()=>fireEvent.change(area,{target:{value:'Retain target on failure'}}));const heldTarget=[...document.querySelectorAll('[role="status"]')].find(e=>e.textContent.startsWith('Replying to:')).textContent;
+ await act(async()=>replyButton(newestQuestion).click());await until(()=>replyTarget()?.includes(newestQuestion.prompt));await act(async()=>fireEvent.change(area,{target:{value:'Retain target on failure'}}));const heldTarget=replyTarget();
  // The transcript now opens a recent window; load the original off-page question before clicking it.
  await act(async()=>[...document.querySelectorAll('button')].find(button=>button.textContent==='Load earlier messages').click());await until(()=>replyButton(first));
  const loadedIds=new Set((await requests()).requests.map(r=>r.id));const offPage=questions.get(f.db.prepare("SELECT id FROM work_questions WHERE status='open'").all().find(r=>!loadedIds.has(r.id)).id);const originalGetQuestion=api.getQuestion;let finishLookup;api.getQuestion=()=>new Promise(resolve=>{finishLookup=resolve;});await act(async()=>replyButton(offPage).click());await until(()=>finishLookup);
- await act(async()=>fireEvent.submit(area.closest('form')));await until(()=>rejectSend);await act(async()=>{document.querySelector('[aria-label="Reply to message"]').click();replyButton(first).click();});assert.equal([...document.querySelectorAll('[role="status"]')].find(e=>e.textContent.startsWith('Replying to:')).textContent,heldTarget);
- await act(async()=>rejectSend(Error('Controlled send failure')));await until(()=>document.body.textContent.includes('Controlled send failure'));assert.equal(area.value,'Retain target on failure');assert.equal([...document.querySelectorAll('[role="status"]')].find(e=>e.textContent.startsWith('Replying to:')).textContent,heldTarget);api.sendMessage=originalSend;await act(async()=>finishLookup({question:offPage}));assert.equal([...document.querySelectorAll('[role="status"]')].find(e=>e.textContent.startsWith('Replying to:')).textContent,heldTarget,'A pre-send lookup cannot retarget the failed answer');api.getQuestion=originalGetQuestion;
+ await act(async()=>fireEvent.submit(area.closest('form')));await until(()=>rejectSend);await act(async()=>{document.querySelector('[aria-label="Reply to message"]').click();replyButton(first).click();});assert.equal(replyTarget(),heldTarget);
+ await act(async()=>rejectSend(Error('Controlled send failure')));await until(()=>document.body.textContent.includes('Controlled send failure'));assert.equal(area.value,'Retain target on failure');assert.equal(replyTarget(),heldTarget);api.sendMessage=originalSend;await act(async()=>finishLookup({question:offPage}));assert.equal(replyTarget(),heldTarget,'A pre-send lookup cannot retarget the failed answer');api.getQuestion=originalGetQuestion;
  // Expiry on another device preserves the composed text on a rejected answer.
  await act(async()=>replyButton(newestQuestion).click());await act(async()=>fireEvent.change(area,{target:{value:'Keep this stale answer'}}));
  await act(async()=>{f.db.prepare("UPDATE work_questions SET status='cancelled' WHERE status='open'").run();});
@@ -137,15 +139,15 @@ try{
  await act(async()=>replyButton(dismissDraft).click());await act(async()=>fireEvent.change(area,{target:{value:'Keep my draft when dismissed'}}));
  const dismissButton=()=>[...document.querySelectorAll('button')].find(button=>button.textContent==='Dismiss'&&button.closest('[data-slot="message"]')?.textContent.includes(dismissDraft.prompt));
  await until(()=>dismissButton());const originalDismiss=api.dismissQuestion;api.dismissQuestion=async()=>{throw Error('Controlled dismiss failure');};
- await act(async()=>dismissButton().click());await until(()=>document.body.textContent.includes('Controlled dismiss failure'));assert.equal(area.value,'Keep my draft when dismissed');assert.ok(document.body.textContent.includes('Replying to:'));
- api.dismissQuestion=originalDismiss;const seenBeforeDismiss=seen.length;await act(async()=>dismissButton().click());await until(()=>!dismissButton()&&!document.body.textContent.includes('Replying to:'));
+ await act(async()=>dismissButton().click());await until(()=>document.body.textContent.includes('Controlled dismiss failure'));assert.equal(area.value,'Keep my draft when dismissed');assert.ok(replyPreview());
+ api.dismissQuestion=originalDismiss;const seenBeforeDismiss=seen.length;await act(async()=>dismissButton().click());await until(()=>!dismissButton()&&!replyPreview());
  assert.equal(area.value,'Keep my draft when dismissed');assert.equal(seen.length,seenBeforeDismiss);assert.equal((await json('/questions/'+dismissDraft.id)).question.status,'cancelled');
  assert.ok(document.body.textContent.includes(dismissDraft.prompt),'Dismissing a visible question retains its original message');
  console.log('PASS mounted Dismiss: exact question, failure feedback, retained draft/history, cleared reply target and no continuation.');
  assert.ok(!document.body.textContent.includes('Send answer & continue'));assert.ok(!document.body.textContent.includes('Mark as reviewed'));assert.ok(!document.body.textContent.includes('Needs you'));
- await act(async()=>{oldQuestion();});const limitedApi=createApi(limited,()=>{},(path,init)=>fetch(f.url+path,init));await mount(false,limitedApi);await until(()=>document.querySelector('[aria-label="Reply to message"]'));assert.ok(!document.body.textContent.includes('Replying to:'));assert.ok(![...document.querySelectorAll('button')].some(button=>button.textContent==='Dismiss'));
+ await act(async()=>{oldQuestion();});const limitedApi=createApi(limited,()=>{},(path,init)=>fetch(f.url+path,init));await mount(false,limitedApi);await until(()=>document.querySelector('[aria-label="Reply to message"]'));assert.ok(!replyPreview());assert.ok(![...document.querySelectorAll('button')].some(button=>button.textContent==='Dismiss'));
  const limitedArea=document.querySelector('textarea');await act(async()=>fireEvent.change(limitedArea,{target:{value:'Limited ordinary message'}}));await act(async()=>fireEvent.submit(limitedArea.closest('form')));await until(()=>limitedArea.value==='');await settle();assert.ok(!seen.at(-1).message.questionId,'A pending question cannot capture Limited-device ordinary messages');
- console.log('PASS mounted chat: question messages/Reply, composer target/New message, stable targets, explicit send, stale draft retention and no Needs you forms.');
+ console.log('PASS mounted chat: question messages/Reply, composer target/Cancel reply, stable targets, explicit send, stale draft retention and no Needs you forms.');
 }catch(error){console.error(error.stack);throw error;}finally{
  if(reactRoot){const require=createRequire(rootPath+'apps/desk/package.json');await require('react').act(async()=>reactRoot.unmount());}off?.();await vite?.close();dom?.window.close();broker?.close();await f?.close();rmSync(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});
 }

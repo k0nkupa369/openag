@@ -180,10 +180,11 @@ export function Login({ notice, onSignedIn, invite, onCancel }: {
         <div className="flex items-center gap-2 font-semibold tracking-tight"><Logo size={24} /> OpenAg</div>
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">Connect this device</CardTitle>
+            <CardTitle role="heading" aria-level={1} className="text-2xl">Connect this device</CardTitle>
             <CardDescription>Bring your OpenAg desk with you.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
+            <ErrorLine error={error} />
             {joinInvite?.full && <Alert><AlertDescription>The host invited this browser to have Full access. Confirm the device name to continue. This link expires after five minutes and works once.</AlertDescription></Alert>}
             {onCancel && <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>Cancel and keep current access</Button>}
             <Tabs value={mode} onValueChange={value => switchMode(value as Mode)}>
@@ -214,7 +215,6 @@ export function Login({ notice, onSignedIn, invite, onCancel }: {
           <Button type="submit" disabled={busy}>
             {busy ? <><LoaderCircle data-icon="inline-start" className="animate-spin motion-reduce:animate-none" />Connecting…</> : <>Connect device <ArrowRight data-icon="inline-end" /></>}
           </Button>
-          <ErrorLine error={error} />
         </FieldGroup></form>
       ) : (
         <form
@@ -240,7 +240,6 @@ export function Login({ notice, onSignedIn, invite, onCancel }: {
           <Button type="submit" disabled={busy}>
             {busy ? <><LoaderCircle data-icon="inline-start" className="animate-spin motion-reduce:animate-none" />Connecting…</> : "Join"}
           </Button>
-          <ErrorLine error={error} />
         </FieldGroup></form>
       )}
             </Tabs>

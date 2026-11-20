@@ -67,3 +67,7 @@ acceptance and local microphone quality remain unverified by this research.
 
 Ollama defaults an omitted model tag to `latest`; catalogue lookup must preserve
 this equivalence for existing untagged selections. [Official model-name conventions](https://github.com/ollama/ollama/blob/main/docs/api.md#model-names).
+
+## GPT-6 reasoning fallback (20 November 2026)
+
+The installed catalogue (`@mastra/core` 1.79.0 model metadata) lists reasoning for `gpt-6-luna`, `gpt-6-sol` and `gpt-6.1-sol` but not newer OpenAI ids such as `gpt-6.1-terra` and `gpt-6.2-astra`, so their Effort selector was hidden. `reasoningCapabilities()` keeps the catalogue's answer when it has one. For an unlisted OpenAI `gpt-N[.M][-variant]` id with N ≥ 6 (not a `chat` variant) it offers effort `low`, `medium`, `high`, `xhigh`, `max`, the list Mastra's bundled OpenAI provider applies to that family and validates against. Live check with the owner's key, 20 November: both models accepted every one of these values. `gpt-6.1-terra` also accepted `none`, which `gpt-6.2-astra` rejected, so `none` is not offered. Other providers and older families are unchanged.
