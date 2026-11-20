@@ -17,3 +17,18 @@ Keyboard-driven UI appears on the first frame. The Cmd+K palette and its backdro
 Sheets open over 200ms and close over 150ms on the house curve, panel and backdrop alike. The panel transitions only opacity and `translate` (what Tailwind v4 `translate-*` sets). Jump-to-latest leaves over 150ms on the house curve; its 200ms entry is unchanged.
 
 `node scripts/verify-rendered-acceptance.mjs motion` asserts these in Chromium with normal motion preferences.
+
+## Tooltip grouping, drag tracking and the phone navigation drawer (20 November 2026)
+
+**Tooltips.** One `TooltipProvider` with a 600ms delay wraps the desk (`main.tsx`). The first tooltip waits for the delay; a tooltip opened right after another (for example Copy, then Reply on a message) opens at once with `data-instant="delay"` and no animation.
+
+**Sidebar reorder drag.** While the pointer is down, the dragged row follows it 1:1 through a `transform` written directly on the row; React state changes only when the drop target changes. Past the first or last row of its group, the row moves a fifth of the overshoot. A drop settles from where the finger let go, through the existing 200ms reorder settle. A cancelled or invalid drop springs back over 200ms on the house curve, instantly under reduced motion. Only the primary pointer starts a drag, and a second touch during a drag is ignored. The drop target comes from the rows' bounds, not `elementFromPoint`, because the dragged row is now under the pointer.
+
+**Phone navigation.** The phone sidebar is the shadcn base-nova `Drawer` (Base UI Drawer) instead of a `Sheet`. It swipes closed toward the edge it opened from. The drawer and backdrop follow the finger, and the backdrop fades with swipe progress. A long swipe or a flick closes it; a short drag snaps back. Base UI claims the gesture only after a short movement, so taps and vertical scrolling inside the drawer still work, then tracks 1:1. It responds to touch, not mouse drags. Timing is the registry default: 450ms open on `cubic-bezier(0.22,1,0.36,1)`, and closing time scales with swipe strength.
+
+`node scripts/verify-rendered-acceptance.mjs motion` covers all three in Chromium:
+- the first tooltip waits and the adjacent one is instant;
+- the row tracks 1:1, rubber-bands, cancels home and reorders on drop;
+- touch swipes track 1:1 after the drawer claims the gesture, fade the backdrop and close, while a short drag stays open.
+
+Physical phones and Safari are unverified.

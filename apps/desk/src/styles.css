@@ -313,7 +313,7 @@ a { color: var(--ink); text-underline-offset: 2px; }
 /* Sidebar ordering uses a dedicated touch handle so links and scrolling stay available. */
 .desk-sortable { display: flex; align-items: center; min-width: 0; border-radius: 6px; }
 .desk-sortable-link { flex: 1; min-width: 0; overflow: hidden; }
-.desk-dragging { opacity: .5; }
+.desk-dragging { position: relative; z-index: 1; opacity: .85; }
 .desk-drop-target { outline: 2px solid var(--ring); outline-offset: -2px; }
 
 /* Work-state feedback stays attached to the avatar, never shifting the agent row. */

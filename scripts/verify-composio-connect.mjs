@@ -17,6 +17,7 @@ import { createGateway } from '../apps/daemon/dist/gateway.js';
 import { createRunner } from '../apps/daemon/dist/runtimes/runner.js';
 import { createBot, createRoom, addMember } from '../apps/daemon/dist/rooms.js';
 import { withoutOwnerSecrets } from '../apps/daemon/dist/runtimes/acp.js';
+import { createPermissions } from '../apps/daemon/dist/permissions.js';
 import { getDefaultRedactor } from '../apps/daemon/dist/redact.js';
 import { createMcpAccess } from '../apps/daemon/dist/mcpserver.js';
 const require = createRequire(new URL('../apps/daemon/package.json', import.meta.url));
@@ -70,7 +71,7 @@ const fakeFetch = async (input, init = {}) => {
   if (init.method === 'GET') return new Response(null, { status: 405 });
   const server = new McpServer({ name: 'Controlled Composio', version: '1.0.0' });
   server.registerTool('COMPOSIO_CONTROLLED_ACTION', { description: 'Controlled action', inputSchema: { value: z.string().max(50) } }, async ({ value }) => {
-    remoteCalls++; return { content: [{ type: 'text', text: value + ' ' + secret + ' ' + idToken }] };
+    remoteCalls++; return { content: [{ type: 'text', text: JSON.stringify({ successful: true, data: { value, echo: secret + ' ' + idToken }, error: null }) }] };
   });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
@@ -196,19 +197,22 @@ try {
  assert.equal(library.entries.filter(e => e.runtimeId === COMPOSIO_SERVER_ID).length, 1);
  assert.ok(!JSON.stringify(library).includes(secret));
  const beforeApproval = remoteCalls;
- const raised = new Promise(resolve => { const off = ledger.subscribe(room.id, e => { if (e.type === 'approval_requested') { off(); resolve(); } }); });
- const message = ledger.append(room.id, 'user', 'message', { text: 'Use controlled Composio action' });
- const job = runner.run(room, bot, message); await raised;
- assert.equal(remoteCalls, beforeApproval); assert.equal(approvals.listPending().length, 1);
- const approval = approvals.listPending()[0]; approvals.resolve(approval.id, { kind: 'accept' }, approval.reviewVersion);
- await job; assert.equal(captured.isError, true); const uncertain=JSON.parse(captured.content[0].text); assert.equal(uncertain.executionOutcome,"unknown"); assert.equal(uncertain.invocationOutcome,"returned"); assert.equal(uncertain.result.untrusted,true); assert.match(uncertain.message,/external effect is unconfirmed/, "Preserve receipt policy: MCP transport success does not confirm external effects"); assert.equal(remoteCalls, beforeApproval + 1);
+ // Confined permission modes refuse MCP operations outright: no approval, no provider call.
+ await runner.run(room, bot, ledger.append(room.id, 'user', 'message', { text: 'Use controlled Composio action while confined' }));
+ assert.equal(captured.isError, true); assert.match(captured.content[0].text, /unavailable in confined modes/);
+ assert.equal(approvals.listPending().length, 0); assert.equal(remoteCalls, beforeApproval);
+ // Full access runs the call once through the gate without a fabricated approval.
+ const permissions = createPermissions(db, ledger, dir, approvals), confined = permissions.ensure(bot.id, room.id);
+ permissions.select(bot.id, room.id, 'full-access', 'controlled-owner', confined.revision);
+ await runner.run(room, bot, ledger.append(room.id, 'user', 'message', { text: 'Use controlled Composio action' }));
+ assert.equal(approvals.listPending().length, 0); assert.notEqual(captured.isError, true); const returned=JSON.parse(captured.content[0].text); assert.equal(returned.untrusted,true); assert.equal(returned.effectVerification,'not-checked', 'MCP success never confirms the external effect'); assert.match(returned.content,/"successful":true/); assert.ok(!captured.content[0].text.includes(secret)); assert.equal(remoteCalls, beforeApproval + 1);
  await runner.run(room, bot, ledger.append(room.id, 'user', 'message', { text: 'Unattended' }), undefined, { unattended: true });
  assert.equal(captured.isError, true); assert.equal(approvals.listPending().length, 0); assert.equal(remoteCalls, beforeApproval + 1);
  for (const path of ['/google-connect', '/composio-connect']) { const res = await req(path + '?code=controlled&state=controlled'); assert.equal(res.status, path === '/composio-connect' ? 400 : 200); assert.equal(res.headers.get('referrer-policy'), 'no-referrer'); assert.equal(res.headers.get('cache-control'), 'no-store'); }
  const secrets = JSON.stringify([...db.prepare('SELECT payload_json FROM events').all(), ...db.prepare('SELECT state_json FROM turns').all(), await req('/connectors/composio').then(r => r.json())]);
  for (const value of [secret, refresh, idToken, key, code]) assert.ok(!secrets.includes(value));
  const stripped = withoutOwnerSecrets({ ...env, COMPOSIO_API_KEY: 'old-key' }); assert.ok(!stripped.OPENAG_CONNECTOR_KEY); assert.ok(!stripped.OPENAG_COMPOSIO_REDIRECT_URI); assert.ok(!stripped.COMPOSIO_API_KEY);
- console.log('ok gateway Full/limited access, callback/static privacy, runner single approval/unattended denial and scoped ACP MCP calls through the same runner gate');
+ console.log('ok gateway Full/limited access, callback/static privacy, confined refusal, Full access without approval, unattended denial and scoped ACP MCP calls through the same runner gate');
  // 401 never replays an action; invalid refresh never starts browser sign-in in the background.
  const otherBefore = { connections: otherConnections, closes: otherCloses };
  otherHold = new Promise(resolve => { otherRelease = resolve; });

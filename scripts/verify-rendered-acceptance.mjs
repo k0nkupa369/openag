@@ -346,6 +346,104 @@ export const SCENARIOS = {
       act: async page => { await watch(page, tooltip); await page.getByRole('button', { name: 'Open side panel' }).focus(); await page.locator(tooltip).waitFor(); },
       check: async page => still(await firstOpen(page, tooltip), 'a focus-opened tooltip'),
     });
+    await h.capture('motion', 'tooltip-group-instant', '#/room/motion', {
+      ...NO_MOTION,
+      act: async page => {
+        const article = page.getByRole('article').last(); await article.hover();
+        const copy = article.getByRole('button', { name: 'Copy message' }), reply = article.getByRole('button', { name: 'Reply to message' });
+        await copy.hover(); await page.waitForTimeout(300);
+        h.tooltipEarly = await page.locator(tooltip).count();
+        await page.getByText('Copy message', { exact: true }).last().waitFor();
+        const t = Date.now(); await reply.hover(); await page.locator(tooltip).filter({ hasText: /^Reply$/ }).waitFor();
+        h.tooltipNext = { ms: Date.now() - t, ...await page.locator(tooltip).filter({ hasText: /^Reply$/ }).evaluate(el => ({ instant: el.getAttribute('data-instant'), animations: el.getAnimations().map(a => a.animationName ?? a.transitionProperty) })) };
+      },
+      check: async () => {
+        assert.equal(h.tooltipEarly, 0, 'the first tooltip still waits for its hover delay');
+        assert.ok(h.tooltipNext.ms < 200, `the adjacent tooltip opens without the delay (${h.tooltipNext.ms}ms)`);
+        assert.equal(h.tooltipNext.instant, 'delay', 'the adjacent tooltip is marked instant by the shared provider');
+        assert.deepEqual(h.tooltipNext.animations, [], `the adjacent tooltip appears without animation (running: ${h.tooltipNext.animations.join(', ')})`);
+      },
+    });
+    for (const id of ['alpha', 'bravo']) { createRoom(db, { id, name: id, leadBotId: 'boss' }); addMember(db, id, 'boss'); }
+    await h.capture('motion', 'sidebar-drag-tracks', '#/room/main', {
+      ...NO_MOTION,
+      act: async page => {
+        const row = id => page.locator(`[data-nav-kind="rooms"][data-nav-id="${id}"]`);
+        const order = () => page.locator('[data-nav-kind="rooms"]').evaluateAll(rows => rows.map(r => r.dataset.navId));
+        const shift = id => row(id).evaluate(el => { const m = getComputedStyle(el).transform; return m === 'none' ? 0 : new DOMMatrix(m).m42; });
+        h.dragBefore = await order();
+        const [first, second] = h.dragBefore, handle = row(first).getByRole('button', { name: /^Drag .* to reorder$/ });
+        const box = await handle.boundingBox(), x = box.x + box.width / 2, y = box.y + box.height / 2;
+        const last = await row(h.dragBefore.at(-1)).boundingBox(), own = await row(first).boundingBox(), max = last.y + last.height - (own.y + own.height);
+        await page.mouse.move(x, y); await page.mouse.down();
+        await page.mouse.move(x, y + 13, { steps: 4 }); h.dragTrack = await shift(first);
+        await page.mouse.move(x, y + max + 100, { steps: 6 }); h.dragEdge = { shift: await shift(first), max };
+        await page.mouse.move(x, y - 50, { steps: 6 }); await page.mouse.up(); await page.waitForTimeout(300); h.dragCancel = { order: await order(), shift: await shift(first) };
+        const target = await row(second).boundingBox();
+        await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, target.y + target.height / 2, { steps: 8 }); await page.mouse.up(); await page.waitForTimeout(300);
+        h.dragAfter = { order: await order(), shift: await shift(first), first, second };
+      },
+      check: async () => {
+        assert.ok(Math.abs(h.dragTrack - 13) <= 1, `the dragged row follows the pointer 1:1 (moved ${h.dragTrack}px for 13px)`);
+        const { shift, max } = h.dragEdge;
+        assert.ok(Math.abs(shift - (max + 20)) <= 2, `past the list end the row moves a fifth of the overshoot (moved ${shift}px, end ${max}px, pointer ${max + 100}px)`);
+        assert.deepEqual(h.dragCancel.order, h.dragBefore, 'releasing outside a target keeps the order');
+        assert.equal(h.dragCancel.shift, 0, 'a cancelled drag returns the row home');
+        const expected = [...h.dragBefore]; expected.splice(0, 2, h.dragAfter.second, h.dragAfter.first);
+        assert.deepEqual(h.dragAfter.order, expected, 'dropping on the next row reorders the list');
+        assert.equal(h.dragAfter.shift, 0, 'the dropped row settles with no leftover transform');
+      },
+    });
+    const PHONE_MOTION = { reducedMotion: 'no-preference', variants: [VARIANTS[2]] }, nav = '[data-mobile="true"][data-swipe-direction]', navBackdrop = '[data-slot="drawer-overlay"]';
+    const openNav = async page => { await page.getByRole('button', { name: /^Open navigation/ }).first().click(); await page.locator(nav).waitFor(); await page.waitForTimeout(600); };
+    const navState = page => page.evaluate(([nav, backdrop]) => {
+      const popup = document.querySelector(nav), dim = document.querySelector(backdrop);
+      return popup && { x: Math.round(popup.getBoundingClientRect().left), swiping: popup.hasAttribute('data-swiping'), dim: dim ? +getComputedStyle(dim).opacity : null };
+    }, [nav, navBackdrop]);
+    /** A one-finger horizontal swipe through CDP touch events: Base UI drawers track touch, not mouse drags. */
+    const swipe = async (page, x, y, dx, steps, { hold = 0, release = true } = {}) => {
+      const cdp = h.cdp ??= new WeakMap(); if (!cdp.has(page)) cdp.set(page, await page.context().newCDPSession(page));
+      const send = (type, px) => cdp.get(page).send('Input.dispatchTouchEvent', { type, touchPoints: px === undefined ? [] : [{ x: px, y }] });
+      await send('touchStart', x);
+      for (let i = 1; i <= steps; i++) { await send('touchMove', x + dx * i / steps); await page.waitForTimeout(16); }
+      if (hold) await page.waitForTimeout(hold);
+      if (release) await send('touchEnd');
+      return () => send('touchEnd');
+    };
+    await h.capture('motion', 'phone-nav-swipe-closes', '#/room/main', {
+      ...PHONE_MOTION,
+      act: async page => {
+        await openNav(page); h.navOpen = await navState(page);
+        const box = await page.locator(nav).boundingBox(), y = box.y + box.height / 2, x = box.x + box.width * 0.7;
+        const lift = await swipe(page, x, y, -80, 8, { release: false });
+        h.navMid = await navState(page);
+        await swipe(page, x - 80, y, -40, 4, { release: false }); h.navLater = await navState(page);
+        await swipe(page, x - 120, y, -100, 5, { release: false }); await lift();
+        await page.locator(nav).waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
+        h.navClosed = await page.locator(nav).count();
+      },
+      check: async () => {
+        assert.ok(h.navMid.swiping, `the drawer is in its swiping state while dragged (${JSON.stringify({ open: h.navOpen, mid: h.navMid, closed: h.navClosed })})`);
+        // Base UI waits for a short movement before it claims the gesture (so taps and vertical scrolls pass through), then tracks 1:1.
+        assert.ok(h.navOpen.x - h.navMid.x >= 50, `the drawer moves with the finger (left edge ${h.navOpen.x} -> ${h.navMid.x}px for an 80px drag)`);
+        assert.ok(Math.abs((h.navMid.x - h.navLater.x) - 40) <= 3, `once claimed, the drawer tracks the finger 1:1 (${h.navMid.x - h.navLater.x}px for 40px)`);
+        assert.ok(h.navMid.dim < h.navOpen.dim, `the backdrop fades with the swipe (${h.navOpen.dim} -> ${h.navMid.dim})`);
+        assert.equal(h.navClosed, 0, 'a long swipe toward the edge closes the drawer');
+      },
+    });
+    await h.capture('motion', 'phone-nav-short-drag-stays', '#/room/main', {
+      ...PHONE_MOTION,
+      act: async page => {
+        await openNav(page); h.navOpen = await navState(page);
+        const box = await page.locator(nav).boundingBox(), y = box.y + box.height / 2, x = box.x + box.width * 0.7;
+        await swipe(page, x, y, -20, 20, { hold: 150 }); await page.waitForTimeout(600);
+        h.navAfter = await navState(page);
+      },
+      check: async () => {
+        assert.ok(h.navAfter, 'a short slow drag leaves the drawer open');
+        assert.equal(h.navAfter.x, h.navOpen.x, 'the drawer snaps back to its open position');
+      },
+    });
     await h.capture('motion', 'mention-picker-instant', '#/room/main', {
       ...NO_MOTION,
       act: async page => { await watch(page, mentions); await composer(page).click(); await page.keyboard.type('@'); await page.locator(mentions).waitFor(); },

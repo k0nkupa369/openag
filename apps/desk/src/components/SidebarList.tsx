@@ -25,6 +25,7 @@ export function SidebarList<T extends { id: string; name: string }>({ kind, item
   const rows = useRef(new Map<string, HTMLLIElement>());
   const beforeDrop = useRef<Map<string, number> | null>(null);
   const settling = useRef(new Set<Animation>());
+  const tracking = useRef<{ startY: number; min: number; max: number } | null>(null);
   function stopSettling() {
     for (const animation of settling.current) animation.cancel();
     settling.current.clear();
@@ -71,26 +72,55 @@ export function SidebarList<T extends { id: string; name: string }>({ kind, item
     order.splice(ordered.findIndex((item) => item.id === target), 0, id);
     save({ ...prefs, order }, `Moved ${items.find((item) => item.id === id)?.name}.`);
   }
+  /** Release phase: a drop settles from where the finger let go (the FLIP in the layout effect); a cancel springs back. */
+  function end(id: string, drop: boolean) {
+    if (!tracking.current) return;
+    tracking.current = null;
+    const row = rows.current.get(id), target = drag?.target;
+    setDrag(null);
+    if (drop && target) { move(id, target, true); if (row) row.style.transform = ""; return; }
+    if (!row) return;
+    const from = row.style.transform;
+    row.style.transform = "";
+    if (from && row.animate && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const animation = row.animate([{ transform: from }, { transform: "translateY(0)" }], { duration: 200, easing: "cubic-bezier(0.23, 1, 0.32, 1)" });
+      settling.current.add(animation);
+      animation.onfinish = animation.oncancel = () => { settling.current.delete(animation); };
+    }
+  }
   return <>
     <li className="sr-only" role="status">{notice}</li>
     {ordered.map((item, index) => <SidebarMenuItem key={item.id} ref={element => { if (element) rows.current.set(item.id, element); else rows.current.delete(item.id); }} data-nav-id={item.id} data-nav-kind={kind}
       className={`desk-sortable ${drag?.id === item.id ? "desk-dragging" : ""} ${drag?.target === item.id ? "desk-drop-target" : ""}`}>
       <Button type="button" variant="ghost" size="icon-xs" className="h-11 w-6 shrink-0 cursor-grab touch-none text-muted-foreground [@media(pointer:coarse)]:w-11" aria-label={`Drag ${item.name} to reorder`} title="Drag to reorder; use the menu to move without dragging"
         onPointerDown={(event) => {
-          if (event.button !== 0) return;
+          // One finger drags; a second touch or a running drag is ignored so the row never jumps.
+          if (event.button !== 0 || !event.isPrimary || drag) return;
           beforeDrop.current = null; stopSettling();
+          const row = rows.current.get(item.id), group = ordered.filter(other => pinned(other.id) === pinned(item.id)).map(other => rows.current.get(other.id)!.getBoundingClientRect());
+          if (!row) return;
+          const own = row.getBoundingClientRect();
+          tracking.current = { startY: event.clientY, min: group[0].top - own.top, max: group[group.length - 1].bottom - own.bottom };
           event.currentTarget.setPointerCapture(event.pointerId);
           setDrag({ id: item.id, target: null });
         }}
         // shortcut: drag targets must be visible; add edge scrolling if long sidebars need it.
         onPointerMove={(event) => {
-          if (!drag || drag.id !== item.id) return;
-          const row = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-nav-id]");
-          const target = row?.dataset.navKind === kind ? row.dataset.navId : undefined;
-          setDrag({ id: item.id, target: target && target !== item.id && pinned(target) === pinned(item.id) ? target : null });
+          const track = tracking.current, row = rows.current.get(item.id);
+          if (!drag || drag.id !== item.id || !track || !row) return;
+          // Track phase: the row is the finger. Past the list ends it moves a fifth of the overshoot.
+          const dy = event.clientY - track.startY, clamped = Math.min(track.max, Math.max(track.min, dy));
+          row.style.transform = `translateY(${clamped + (dy - clamped) * 0.2}px)`;
+          let target: string | null = null;
+          for (const [id, element] of rows.current) {
+            if (id === item.id || pinned(id) !== pinned(item.id)) continue;
+            const rect = element.getBoundingClientRect();
+            if (event.clientY >= rect.top && event.clientY < rect.bottom) target = id;
+          }
+          if (target !== drag.target) setDrag({ id: item.id, target });
         }}
-        onPointerUp={() => { if (drag?.target) move(item.id, drag.target, true); setDrag(null); }}
-        onPointerCancel={() => setDrag(null)} onLostPointerCapture={() => setDrag(null)}><GripVertical aria-hidden="true" /></Button>
+        onPointerUp={() => end(item.id, true)}
+        onPointerCancel={() => end(item.id, false)} onLostPointerCapture={() => end(item.id, false)}><GripVertical aria-hidden="true" /></Button>
       <div className="desk-sortable-link">{children(item)}</div>
       <Popover><PopoverTrigger render={<Button type="button" variant="ghost" size="icon-xs" className={cn("h-11 w-6 shrink-0 text-muted-foreground [@media(pointer:coarse)]:w-11", kind === "agents" && "desk-agent-options")} data-pinned={pinned(item.id)} aria-label={`Options for ${item.name}`} />}>
         {pinned(item.id) ? <Pin aria-hidden="true" /> : <MoreHorizontal aria-hidden="true" />}

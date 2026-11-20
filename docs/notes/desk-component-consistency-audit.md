@@ -797,3 +797,14 @@ Five motion fixes in the installed base-nova components, each asserted by the `m
 - Message scroller: the jump-to-latest exit is 150ms on the house curve instead of 400ms `cubic-bezier(0.7,0,0.84,0)`.
 
 Phone sizes, dark theme, Safari and physical devices were not run for the motion scenario; these are class changes with no layout effect, and the full acceptance run covers layout at those sizes with reduced motion.
+
+## Tooltip grouping, drag tracking and phone navigation drawer — 20 November 2026
+
+- **Drawer (new):** `ui/drawer.tsx` is the unmodified shadcn base-nova registry component (`npx shadcn add drawer`, Base UI Drawer).
+  - It replaces `Sheet` only for the phone sidebar in `ui/sidebar.tsx`, with `swipeDirection` following the sidebar side.
+  - Feature classes set only the sidebar surface (`bg-sidebar`, foreground) and its width (`--drawer-content-width: var(--sidebar-width)`).
+  - The sidebar's own `data-slot="sidebar"` replaces the popup's `drawer-popup` slot, as it did for `sheet-content`.
+  - Sheets elsewhere are unchanged.
+- **Tooltip:** one `TooltipProvider` (delay 600ms) at the root. `ui/tooltip.tsx` is unchanged.
+- **Sidebar reorder:** a feature-level gesture in `SidebarList.tsx`. The only styling change is to `.desk-dragging`: it now sits above its neighbours and its opacity goes from 0.5 to 0.85.
+- **Rendered coverage:** the full `verify-rendered-acceptance.mjs` run covers layout at desktop and phone sizes in both themes. The `motion` scenario covers the gestures on desktop (reorder) and on phone with touch (drawer). Physical devices and Safari are unverified.

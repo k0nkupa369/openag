@@ -2,6 +2,17 @@
 
 All notable changes to OpenAg are recorded here. Versions follow [Semantic Versioning](https://semver.org); before 1.0, minor versions may change interfaces.
 
+## 0.7.4
+
+### Desk
+- A tooltip opened right after another one (for example Copy, then Reply on a message) appears at once instead of waiting again.
+- Dragging a sidebar room or agent to reorder it: the row follows your pointer, stretches slightly past the ends of the list, and returns home if you let go outside a target. A second finger is ignored.
+- On phones, the navigation drawer closes with a swipe toward its edge, and the background fades as you swipe. A short drag snaps it back open.
+
+### Verification
+- `scripts/verify-avatar-performance.mjs` checks avatar frame pacing and main-thread cost in Chromium (OA-390).
+- `scripts/verify-composio-connect.mjs` matches permission sessions: a confined mode refuses the Composio call, and Full access runs it once without an approval.
+
 ## 0.7.3
 
 ### Models

@@ -10,7 +10,25 @@ Existing shape IDs remain readable and writable compatibility inputs. IDs withou
 
 Work expressions still use the existing activity logic, including its completion window, failure/unknown handling and reconnect behavior. Ordinary chat does not implicitly create Work. The controlled avatar fixture explicitly assigns synthetic Work for lifecycle checks.
 
-Deployment history is recorded below and in the dated release notes. Browser visual/performance acceptance remains pending because local browser use is disabled in Work settings.
+Deployment history is recorded below and in the dated release notes. Rendered desktop/phone acceptance and the browser performance check below run in real Chromium; physical phones and Safari remain unverified.
+
+## Browser performance (20 November 2026)
+
+`scripts/verify-avatar-performance.mjs` renders the built desk in headless Chromium against the disposable `bot-models-fixture` gateway with motion allowed. Desktop (1440×1000) runs unthrottled; phone (390×844, touch) runs with a 4× CPU slowdown. Three passes, all within budget:
+
+| Scenario | Desktop | Phone, 4× CPU |
+| --- | --- | --- |
+| Idle chat, animated 24px header avatar, 5 s | 60 fps, p95 17.4 ms, 0 long tasks, page work 1.5–2.1% | 60 fps, p95 17.5 ms, 0 long tasks |
+| Scrolling 300 messages with static sender avatars | 59–60 fps, p95 17.3 ms; 0 of 25 transcript avatars animate | 59–60 fps, p95 17.6 ms; at most 1 long task (64 ms) |
+| Dragging the avatar editor, 2 s | 60 fps, p95 17.3 ms | 38–43 fps, p95 34 ms |
+
+How to read the numbers:
+- **Page work** is script, layout and style time per second of wall time. The idle header avatar costs about 2% of the main thread, from about 124 renderer DOM updates per second. With reduced motion it is zero.
+- **Total task time** is also printed. On desktop it is 16–24% idle and about 40% while dragging, almost all of it paint and raster, which headless Chromium does on the CPU. That share grows with viewport size, and a GPU device offloads most of it, so it is reported but not budgeted.
+- **Throttled durations** are not comparable: under `Emulation.setCPUThrottlingRate` the same work reports about a third of its unthrottled time. The phone profile therefore budgets frames and long tasks only.
+- **Phone drag** is the one scenario below 60 fps. Its page work stays at 8%; the rest is CPU raster of the 3D scene.
+
+Not covered: physical phones, Safari, the installed PWA and GPU rasterisation.
 
 ## Knowledge delivery and verification
 

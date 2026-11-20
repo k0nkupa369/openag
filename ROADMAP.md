@@ -46,14 +46,14 @@ Ticket IDs are not unique across campaigns. Some IDs were reused (for example OA
 - OA-395 Reviewed read-only Composio batches complete instead of leaving Unknown receipts ([mcp.md](docs/notes/mcp.md)).
 - OA-215 GitHub polling trigger without a tunnel, `repo` mode ([github-poll.md](docs/notes/github-poll.md)). Notifications mode is not implemented because it needs a classic token.
 - Rendered acceptance, 18 Nov 2026 ([rendered-acceptance.md](docs/notes/rendered-acceptance.md)): OA-477 questions and decisions in chat, OA-476 replies to a message, OA-473 provider forms in chat, OA-474 invocation result separate from effect verification, OA-469 receipt inspection removed, OA-460 user name and avatar, OA-462 uploaded profile image, OA-459 automatic reflection memory, and OA-466 conversation rendering and typing work (owner confirmed the remote Mac feels faster, 20 Nov). Physical phone, Safari, PWA and screen-reader use remain unverified.
+- OA-390 Replace agent avatars with Open Bot Avatar, 20 Nov 2026: rendered check and Chromium performance check passed (`scripts/verify-avatar-performance.mjs`, [avatars/](docs/notes/avatars/README.md#browser-performance-20-november-2026)). Physical phones and Safari remain unverified.
 - OA-306 Desk WebRTC transport and pairing: a phone joins, uses the desk over WebRTC, reconnects, is revoked and re-pairs; checked with an Android emulator on a second machine on one network ([webrtc.md](docs/notes/webrtc.md)). Crossing carrier NAT moves to OA-307.
 
 ## Built, awaiting acceptance
 
 The source is on `main` and in the 0.5.x releases. Each item stays unticked until its remaining gate passes; the notes linked below record what was checked.
 
-The rendered desktop/phone check now runs in real Chromium (`scripts/verify-rendered-acceptance.mjs`, [rendered-acceptance.md](docs/notes/rendered-acceptance.md)). One item keeps a gate beyond it:
-- OA-390 Replace agent avatars with Open Bot Avatar: rendered check passed; the real-browser performance check remains ([avatars/](docs/notes/avatars/)).
+The rendered desktop/phone check now runs in real Chromium (`scripts/verify-rendered-acceptance.mjs`, [rendered-acceptance.md](docs/notes/rendered-acceptance.md)).
 
 Other remaining gates:
 - OA-475 Isolate uncertain action conflicts across conversations: final Claude subscription re-verification was quota-blocked ([receipt-isolation-acceptance.md](docs/notes/receipt-isolation-acceptance.md)).
