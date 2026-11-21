@@ -101,7 +101,8 @@ const clip = (s: string, max: number) => (s.length > max ? `${s.slice(0, max)}..
 
 /**
  * The newest conversation lines from non-hidden rooms (ids starting with "_" are hidden), in chronological order,
- * capped at DIGEST_CAP characters. Text is redacted before it becomes part of a prompt.
+ * capped at DIGEST_CAP characters. OpenAg's own wake pings and morning brief are left out so reflection reviews real
+ * conversation. Text is redacted before it becomes part of a prompt.
  */
 export function buildDigest(db: Db, sinceMs: number): string {
   const rows = db
@@ -109,6 +110,7 @@ export function buildDigest(db: Db, sinceMs: number): string {
       `SELECT room_id, ts, actor, type, payload_json FROM events
        WHERE ts >= ? AND type IN ('message', 'bot_output') AND substr(room_id, 1, 1) <> '_'
          AND json_extract(payload_json, '$.source') IS NULL
+         AND NOT (actor = 'primary' AND (json_extract(payload_json, '$.wake') = 1 OR json_extract(payload_json, '$.brief') = 1))
          AND (json_extract(payload_json, '$.turnId') IS NULL
               OR json_extract(payload_json, '$.turnId') NOT IN (SELECT id FROM turns WHERE json_extract(state_json, '$.source') IS NOT NULL))
        ORDER BY ts DESC, id DESC LIMIT ?`,

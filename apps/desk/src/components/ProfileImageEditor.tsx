@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Minus, Plus } from "lucide-react";
 import { messageOf } from "../api";
 import { cropImage, saveProfileImage } from "../profile-image";
@@ -15,10 +15,23 @@ export function ProfileImageEditor({ image, onSave, close }: { image: HTMLImageE
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const active = useRef(true), saving = useRef(false);
-  const drag = useRef<{ startX: number; startY: number; x: number; y: number; rangeX: number; rangeY: number } | null>(null);
+  const drag = useRef<{ startX: number; startY: number; x: number; y: number; rangeX: number; rangeY: number; target: { x: number; y: number } } | null>(null);
+  const preview = useRef<HTMLImageElement>(null);
   useUnsavedChanges(true, busy);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+  // A drag moves the image by transform; the committed position replaces it in the same frame.
+  useLayoutEffect(() => { if (preview.current) preview.current.style.transform = ""; }, [position]);
   const crop = cropImage(image.naturalWidth, image.naturalHeight, zoom, position.x, position.y);
+  function endDrag() {
+    const start = drag.current;
+    drag.current = null;
+    if (start) setPosition(start.target);
+  }
+  // The system took the gesture: return the image to where the drag began.
+  function cancelDrag() {
+    drag.current = null;
+    if (preview.current) preview.current.style.transform = "";
+  }
   function move(x: number, y: number) { setPosition(current => ({ x: clamp(current.x + x), y: clamp(current.y + y) })); }
   async function save() {
     if (saving.current) return;
@@ -37,16 +50,18 @@ export function ProfileImageEditor({ image, onSave, close }: { image: HTMLImageE
         onPointerDown={event => {
           if (busy || !event.isPrimary || event.button !== 0) return;
           const width = event.currentTarget.getBoundingClientRect().width;
-          drag.current = { startX: event.clientX, startY: event.clientY, ...position, rangeX: width * (image.naturalWidth / crop.size - 1), rangeY: width * (image.naturalHeight / crop.size - 1) };
+          drag.current = { startX: event.clientX, startY: event.clientY, ...position, rangeX: width * (image.naturalWidth / crop.size - 1), rangeY: width * (image.naturalHeight / crop.size - 1), target: position };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={event => {
           const start = drag.current;
           if (!start || busy) return;
-          setPosition({ x: start.rangeX > 0 ? clamp(start.x - (event.clientX - start.startX) / start.rangeX) : start.x, y: start.rangeY > 0 ? clamp(start.y - (event.clientY - start.startY) / start.rangeY) : start.y });
+          const target = { x: start.rangeX > 0 ? clamp(start.x - (event.clientX - start.startX) / start.rangeX) : start.x, y: start.rangeY > 0 ? clamp(start.y - (event.clientY - start.startY) / start.rangeY) : start.y };
+          start.target = target;
+          if (preview.current) preview.current.style.transform = `translate(${(start.x - target.x) * start.rangeX}px, ${(start.y - target.y) * start.rangeY}px)`;
         }}
-        onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}>
-        <img src={image.src} alt="" draggable={false} className="pointer-events-none absolute max-w-none select-none" style={{ width: `${image.naturalWidth / crop.size * 100}%`, height: `${image.naturalHeight / crop.size * 100}%`, left: `${-crop.left / crop.size * 100}%`, top: `${-crop.top / crop.size * 100}%` }} />
+        onPointerUp={endDrag} onPointerCancel={cancelDrag} onLostPointerCapture={endDrag}>
+        <img ref={preview} src={image.src} alt="" draggable={false} className="pointer-events-none absolute max-w-none select-none" style={{ width: `${image.naturalWidth / crop.size * 100}%`, height: `${image.naturalHeight / crop.size * 100}%`, left: `${-crop.left / crop.size * 100}%`, top: `${-crop.top / crop.size * 100}%` }} />
       </div>
       <div className="flex gap-1" role="group" aria-label="Move image">
         {([{ label: "Move image left", icon: ArrowLeft, x: -0.05, y: 0 }, { label: "Move image up", icon: ArrowUp, x: 0, y: -0.05 }, { label: "Move image down", icon: ArrowDown, x: 0, y: 0.05 }, { label: "Move image right", icon: ArrowRight, x: 0.05, y: 0 }]).map(({ label, icon: Icon, x, y }) => <Button key={label} type="button" variant="ghost" size="icon" aria-label={label} disabled={busy} onClick={() => move(-x, -y)}><Icon /></Button>)}

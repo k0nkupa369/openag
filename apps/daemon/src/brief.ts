@@ -6,7 +6,7 @@ import { resolveDeliveryRoom } from "./delivery.js";
 import { getDefaultRedactor } from "./redact.js";
 import { getSetting, localParts } from "./settings.js";
 import { localDateKey } from "./wake.js";
-import { MANAGEMENT_PROPOSAL_SOURCE, PROPOSAL_ACTION_VERBS, type AutomationProposalDisplay } from "./management-proposals.js";
+import { MANAGEMENT_PROPOSAL_SOURCE, proposalBriefLine } from "./management-proposals.js";
 
 const MINUTE_MS = 60_000;
 /** The brief is due from its time for this long; a later tick never sends it (no catch-up beyond this window). */
@@ -16,12 +16,8 @@ const MAX_APPROVALS = 5;
 /** A management proposal belongs to the daemon; name the bot that proposed it and the change, not the internal tool. */
 function approvalLine(a: { bot_id: string; tool_name: string; tool_class: string; source: string | null; payload_json: string | null }): string {
   if (a.source === MANAGEMENT_PROPOSAL_SOURCE && a.payload_json) {
-    try {
-      const p = JSON.parse(a.payload_json) as { proposedBy?: unknown; display?: Partial<AutomationProposalDisplay> };
-      const action = p.display?.action, name = p.display?.name;
-      if (action && Object.hasOwn(PROPOSAL_ACTION_VERBS, action) && typeof name === "string" && typeof p.proposedBy === "string")
-        return `${p.proposedBy} proposes to ${PROPOSAL_ACTION_VERBS[action]} automation ${inlineCode(name)}`;
-    } catch { /* fall through to the generic line */ }
+    try { const line = proposalBriefLine(JSON.parse(a.payload_json), inlineCode); if (line) return line; }
+    catch { /* fall through to the generic line */ }
   }
   return `${a.bot_id} wants ${a.tool_name} (${a.tool_class})`;
 }

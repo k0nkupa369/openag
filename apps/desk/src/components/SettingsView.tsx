@@ -107,7 +107,7 @@ export function SettingsView({ api,canManage=false,subscribe }: { api: Api;canMa
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
         </TabsList>
         <TabsContent value="overview" keepMounted><SettingsSection icon="bolt" title="Always-on readiness" description="Resolve outstanding items to keep your agents available."><ReadinessPanel key={lastBackup?.at ?? "initial"} api={api} /></SettingsSection></TabsContent>
-        <TabsContent value="operations" keepMounted><OpsPanel api={api} onBackupsChange={setBackups} /></TabsContent>
+        <TabsContent value="operations" keepMounted><OpsPanel api={api} canManage={canManage} onBackupsChange={setBackups} /></TabsContent>
         <TabsContent value="connection" keepMounted><div className="flex flex-col gap-6">
       <SettingsSection icon="server" title="How devices reach this server" description="This browser’s route is shown below. Other routes require administrator setup.">
         <Card className="gap-0 py-0"><CardContent className="px-0">

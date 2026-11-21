@@ -13,6 +13,11 @@ import { createMcpInteractions } from '../apps/daemon/dist/mcp/interactions.js';
 import { requestInputTool } from '../apps/daemon/dist/tools/input.js';
 import { toExecutors } from '../apps/daemon/dist/tools/registry.js';
 import { createRoom, addMember } from '../apps/daemon/dist/rooms.js';
+import { createManagementProposals } from '../apps/daemon/dist/management-proposals.js';
+import { PROPOSAL_KINDS } from '../apps/daemon/dist/tools/management.js';
+import { createProactive } from '../apps/daemon/dist/proactive.js';
+import { setSetting } from '../apps/daemon/dist/settings.js';
+import { createWakeFilter } from '../apps/daemon/dist/wake.js';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.OPENAG_PLAYWRIGHT_MODULE || 'playwright');
@@ -104,6 +109,94 @@ const firstOpen = async (page, selector) => { const r = (await seen(page, select
 
 /** Ticket scenarios: each seeds its own data in the shared disposable gateway, then captures states. */
 export const SCENARIOS = {
+  /** OA-347 room proposals: a new room, a membership change with its automation warning, and a direct chat. */
+  async 'proposal-rooms'(h) {
+    const { db, ledger, approvals } = h.f;
+    createRoom(db, { id: 'room-proposals', name: 'room-proposals', leadBotId: 'boss' }); addMember(db, 'room-proposals', 'boss');
+    createRoom(db, { id: 'squad', name: 'Squad', leadBotId: 'coder' }); for (const id of ['coder', 'other']) addMember(db, 'squad', id);
+    db.prepare("INSERT INTO automations (id, name, schedule_cron, bot_id, room_id, prompt, enabled, created_at, updated_at, trigger_kind, output_mode) VALUES ('auto-squad', 'Daily notes', '0 8 * * *', 'other', 'squad', 'Summarise', 1, 0, 0, 'cron', 'room')").run();
+    const proposals = createManagementProposals({ db, ledger, approvals, tz: 'UTC', automations: () => undefined, kinds: PROPOSAL_KINDS });
+    const at = { botId: 'boss', roomId: 'room-proposals' };
+    proposals.propose('propose_room', at, { action: 'create', name: 'Launch plan', members: ['boss', 'coder'], leadBotId: 'coder' });
+    proposals.propose('propose_room', at, { action: 'update', roomId: 'squad', removeMembers: ['other'] });
+    proposals.propose('propose_direct_chat', at, { botId: 'local' });
+    proposals.dispose();
+    const card = (page, text) => page.getByRole('article').filter({ hasText: text }).getByRole('region', { name: 'Proposed change' });
+    await h.capture('proposal-rooms', 'cards', '#/room/room-proposals', {
+      check: async page => {
+        assert.ok(await card(page, 'proposes to create room “Launch plan”').getByText('boss, coder', { exact: true }).isVisible(), 'new room agents');
+        const squad = card(page, 'proposes to change room “Squad”');
+        assert.ok(await squad.getByText('coder, other → coder').isVisible(), 'membership before and after');
+        assert.ok(await squad.getByText(/1 automation in this room runs as this agent/).isVisible(), 'automation warning');
+        assert.ok(await page.getByRole('article').filter({ hasText: 'proposes to open a direct chat with “local”' }).getByRole('button', { name: 'Apply change' }).isVisible(), 'direct chat card');
+      },
+    });
+  },
+  /** OA-347 settings proposals: the card states the change, shows before and after, and is read-only on a Limited device. */
+  async 'proposal-settings'(h) {
+    const { db, ledger, approvals } = h.f;
+    createRoom(db, { id: 'proposals', name: 'proposals', leadBotId: 'boss' }); addMember(db, 'proposals', 'boss');
+    createRoom(db, { id: 'ops', name: 'Ops', leadBotId: 'boss' }); addMember(db, 'ops', 'boss');
+    setSetting(db, 'heartbeat', { enabled: true, everyMinutes: 180, botId: 'boss', prompt: null });
+    const proposals = createManagementProposals({ db, ledger, approvals, tz: 'UTC', automations: () => undefined, kinds: PROPOSAL_KINDS });
+    ledger.append('proposals', 'user', 'message', { text: 'Check every hour instead, and send pings to Ops.' });
+    proposals.propose('propose_proactive', { botId: 'boss', roomId: 'proposals' }, { feature: 'heartbeat', everyMinutes: 60 });
+    proposals.propose('propose_delivery_room', { botId: 'boss', roomId: 'proposals' }, { roomId: 'ops' });
+    proposals.dispose();
+    const card = (page, text) => page.getByRole('article').filter({ hasText: text });
+    await h.capture('proposal-settings', 'cards', '#/room/proposals', {
+      check: async page => {
+        const interval = card(page, 'proposes to change the scheduled checks');
+        assert.ok(await interval.getByText('Every 180 minutes → Every 60 minutes').isVisible(), 'interval before and after');
+        assert.ok(await interval.getByRole('button', { name: 'Apply change' }).isVisible(), 'Apply change shown');
+        assert.equal(await interval.getByRole('button', { name: 'Edit' }).count(), 0, 'no Edit');
+        assert.ok(await card(page, 'proposes to send proactive messages to “Ops”').getByText(/direct chat → Ops/).isVisible(), 'delivery before and after');
+      },
+    });
+    const limited = (await h.json('/devices', 'POST', { name: 'Limited phone' }, h.ownerToken)).token;
+    await h.capture('proposal-settings', 'cards-limited', '#/room/proposals', { token: limited,
+      check: async page => {
+        assert.equal(await page.getByRole('button', { name: 'Apply change' }).count(), 0, 'no decision buttons');
+        assert.ok(await page.getByText('Needs an owner or full-access device to decide.').first().isVisible(), 'read-only note');
+      },
+    });
+  },
+  /** Proactive model use: calls per local day, provider-reported tokens where present. */
+  async 'proactive-usage'(h) {
+    const insert = h.f.db.prepare("INSERT INTO events (room_id, ts, actor, type, payload_json) VALUES ('_proactive', ?, 'boss', ?, ?)");
+    const call = (ts, usage) => {
+      insert.run(ts, 'request_prepared', JSON.stringify({ requestedModel: 'openai/gpt-5.4-mini' }));
+      insert.run(ts, 'request_attempt', JSON.stringify({ attempt: 1, status: 'started' }));
+      insert.run(ts + 1, 'request_attempt', JSON.stringify({ attempt: 1, status: 'returned', ...(usage ? { usage: { source: 'provider-reported', unit: 'tokens', ...usage } } : {}) }));
+    };
+    const now = Date.now(), DAY = 86_400_000;
+    for (let i = 0; i < 3; i++) call(now - i * 60_000, { inputTokens: 11869, outputTokens: 74 });
+    for (let i = 0; i < 8; i++) call(now - DAY - i * 60_000, i < 3 ? { inputTokens: 1200000, outputTokens: 9000 } : undefined);
+    for (let i = 0; i < 26; i++) call(now - 2 * DAY - i * 60_000);
+    const table = page => page.getByRole('table', { name: 'Model use by day' });
+    await h.capture('proactive-usage', 'history', '#/settings/proactive/history', {
+      act: page => table(page).scrollIntoViewIfNeeded(),
+      check: async page => {
+        const rows = await table(page).getByRole('row').allTextContents();
+        assert.equal(rows.length, 4, 'header plus three days');
+        assert.match(rows[1], /3.*35,607 in · 222 out/, 'today: calls and reported tokens');
+        assert.match(rows[2], /8.*3,600,000 in · 27,000 out · 3 of 8 calls/, 'partly reported day');
+        assert.match(rows[3], /26.*Not reported/, 'unreported day');
+      },
+    });
+  },
+  /** Limited devices see installation settings read-only and never the ntfy topic. */
+  async 'settings-owner-gate'(h) {
+    await h.json('/settings/push', 'PUT', { enabled: true, server: 'https://ntfy.sh', topic: 'openag-renderedtopic000001', includeDetail: false, publicUrl: null, maxPerHour: 20 }, h.ownerToken);
+    const limited = (await h.json('/devices', 'POST', { name: 'Limited phone' }, h.ownerToken)).token;
+    const note = page => page.getByText('Needs an owner or full-access device.').first();
+    await h.capture('settings-owner-gate', 'schedule-limited', '#/settings/proactive', { token: limited,
+      check: async page => { assert.ok(await note(page).isVisible(), 'read-only note shown'); assert.ok(await page.getByRole('switch', { name: 'Enable scheduled checks' }).isDisabled(), 'heartbeat switch disabled'); assert.ok(await page.getByRole('button', { name: /^Save / }).first().isDisabled(), 'save disabled'); } });
+    await h.capture('settings-owner-gate', 'notifications-limited', '#/settings/proactive/notifications', { token: limited,
+      check: async page => { assert.equal(await page.getByText('openag-renderedtopic000001').count(), 0, 'topic hidden'); assert.ok(await page.getByRole('button', { name: 'Save notifications' }).isDisabled(), 'save disabled'); } });
+    await h.capture('settings-owner-gate', 'notifications-owner', '#/settings/proactive/notifications', { variants: VARIANTS.slice(0, 1),
+      check: async page => { assert.ok(await page.getByText('openag-renderedtopic000001').isVisible(), 'a Full device sees the topic'); assert.ok(await page.getByRole('button', { name: 'Save notifications' }).isEnabled(), 'save enabled'); } });
+  },
   async 'OA-476'(h) {
     const { ledger } = h.f;
     ledger.append('main', 'boss', 'bot_output', { text: 'Short agent answer to reply to.' });
@@ -316,6 +409,78 @@ export const SCENARIOS = {
     const still = (r, what) => assert.deepEqual(r.animations, [], `${what} appears without animation (running: ${r.animations.join(', ')})`);
     const moves = (r, what) => assert.ok(r.animations.length > 0, `${what} keeps its open animation`);
     const model = async page => { await composer(page).click(); const trigger = page.getByRole('button', { name: /^Model: / }).first(); await trigger.waitFor(); return trigger; };
+    await h.capture('motion', 'house-curve-token', '#/room/main', {
+      ...NO_MOTION,
+      check: async page => {
+        const r = await page.evaluate(() => ({ token: (() => { const probe = document.createElement('i'); probe.style.transitionTimingFunction = getComputedStyle(document.documentElement).getPropertyValue('--ease-house'); document.body.append(probe); const value = getComputedStyle(probe).transitionTimingFunction; probe.remove(); return value; })(), button: getComputedStyle(document.querySelector('[data-slot="button"]')).transitionTimingFunction }));
+        assert.equal(r.token, HOUSE, '--ease-house holds the house curve');
+        assert.equal(r.button, HOUSE, 'Button transitions on the token');
+      },
+    });
+    const sidebarMotion = page => page.locator('[data-slot="sidebar-container"]').evaluate(el => ({ animations: el.getAnimations().map(a => a.transitionProperty), duration: getComputedStyle(el).transitionDuration, easing: getComputedStyle(el).transitionTimingFunction, state: el.closest('[data-slot="sidebar"]').dataset.state }));
+    await h.capture('motion', 'sidebar-keyboard-instant', '#/room/main', {
+      ...NO_MOTION,
+      act: async page => { await page.locator('body').click({ position: { x: 700, y: 500 } }); await page.keyboard.press('ControlOrMeta+b'); h.sidebarKey = await sidebarMotion(page); await page.keyboard.press('ControlOrMeta+b'); h.sidebarKeyBack = await sidebarMotion(page); },
+      check: async () => {
+        assert.equal(h.sidebarKey.state, 'collapsed', 'Cmd+B collapses the sidebar');
+        assert.deepEqual(h.sidebarKey.animations, [], `Cmd+B collapses without a transition (running: ${h.sidebarKey.animations.join(', ')})`);
+        assert.equal(h.sidebarKeyBack.state, 'expanded', 'Cmd+B expands it again');
+        assert.deepEqual(h.sidebarKeyBack.animations, [], 'Cmd+B expands without a transition');
+      },
+    });
+    await h.capture('motion', 'sidebar-pointer-eases', '#/room/main', {
+      ...NO_MOTION,
+      act: async page => { await page.keyboard.press('ControlOrMeta+b'); await page.keyboard.press('ControlOrMeta+b'); await page.locator('[data-sidebar="trigger"]').first().click(); h.sidebarPointer = await sidebarMotion(page); },
+      check: async () => {
+        assert.equal(h.sidebarPointer.state, 'collapsed', 'the trigger collapses the sidebar');
+        assert.ok(h.sidebarPointer.animations.length > 0, 'a pointer toggle keeps its transition');
+        assert.equal(h.sidebarPointer.duration, '0.2s');
+        assert.equal(h.sidebarPointer.easing, HOUSE, 'a pointer toggle runs on the house curve');
+      },
+    });
+    createRoom(db, { id: 'feed-approval', name: 'feed-approval', leadBotId: 'boss' }); addMember(db, 'feed-approval', 'boss');
+    for (let i = 1; i <= 40; i++) ledger.append('feed-approval', 'boss', 'bot_output', { text: `Answer ${i}\n\n` + 'a line of context. '.repeat(6) });
+    h.f.approvals.request({ roomId: 'feed-approval', botId: 'boss', toolName: 'write_file', toolClass: 'act-local', payload: { path: 'notes/plan.md', content: '# Plan\n\n- Draft the reply' } });
+    const fromBottom = page => page.locator('[data-slot="message-scroller-viewport"]').first().evaluate(el => Math.round(el.scrollHeight - el.scrollTop - el.clientHeight));
+    await h.capture('motion', 'disclosure-height-in-feed', '#/room/feed-approval', {
+      ...NO_MOTION,
+      act: async page => {
+        const trigger = page.getByRole('button', { name: 'Review details' }).last(); await trigger.waitFor();
+        h.feedMount = await page.locator('[data-slot="collapsible-content"]').evaluateAll(els => els.flatMap(el => el.getAnimations().map(a => a.transitionProperty)));
+        h.feedBefore = await fromBottom(page);
+        const panel = page.locator('[data-slot="collapsible"]', { has: trigger }).last().locator('[data-slot="collapsible-content"]');
+        const sampling = panel.evaluate(el => new Promise(resolve => {
+          const frames = [];
+          const step = () => { frames.push({ animations: el.getAnimations().map(a => a.transitionProperty), easing: getComputedStyle(el).transitionTimingFunction, height: el.getBoundingClientRect().height, full: el.scrollHeight }); frames.length < 20 ? requestAnimationFrame(step) : resolve(frames); };
+          requestAnimationFrame(step);
+        }));
+        await trigger.click();
+        const frames = await sampling, moving = frames.filter(f => f.animations.includes('height'));
+        h.openMotion = { animations: [...new Set(frames.flatMap(f => f.animations))], easing: moving[0]?.easing, height: Math.min(...moving.map(f => f.height)), full: Math.max(...frames.map(f => f.full)) };
+        await page.waitForTimeout(400); h.feedOpen = await fromBottom(page);
+        await trigger.click(); await page.waitForTimeout(400);
+        h.closed = await panel.evaluate(el => ({ hidden: el.hidden, height: el.getBoundingClientRect().height }));
+      },
+      check: async () => {
+        assert.deepEqual(h.feedMount, [], 'disclosures already open when the card arrives do not animate');
+        assert.ok(h.feedBefore <= 2, `the feed starts at the latest message (${h.feedBefore}px away)`);
+        assert.ok(h.openMotion.animations.includes('height'), `opening animates height (running: ${h.openMotion.animations.join(', ')})`);
+        assert.equal(h.openMotion.easing, HOUSE, 'on the house curve');
+        assert.ok(h.openMotion.height < h.openMotion.full, `a frame is part-open (${h.openMotion.height}px of ${h.openMotion.full}px)`);
+        assert.ok(h.feedOpen <= 2, `the feed stays pinned to the latest message as the disclosure opens (${h.feedOpen}px away)`);
+        assert.deepEqual(h.closed, { hidden: true, height: 0 }, 'closing ends at zero height and hides the kept-mounted panel');
+      },
+    });
+    await h.capture('motion', 'disclosure-reduced-motion', '#/room/feed-approval', {
+      variants: VARIANTS.slice(0, 1),
+      act: async page => {
+        const trigger = page.getByRole('button', { name: 'Review details' }).last(); await trigger.waitFor();
+        const panel = page.locator('[data-slot="collapsible"]', { has: trigger }).last().locator('[data-slot="collapsible-content"]');
+        await trigger.click(); await page.waitForTimeout(50);
+        h.reduced = await panel.evaluate(el => ({ animations: el.getAnimations().length, height: el.getBoundingClientRect().height, full: el.scrollHeight }));
+      },
+      check: async () => assert.deepEqual(h.reduced, { animations: 0, height: h.reduced.full, full: h.reduced.full }, 'with reduced motion the disclosure opens fully at once'),
+    });
     await h.capture('motion', 'command-palette-instant', '#/room/main', {
       ...NO_MOTION,
       act: async page => { await watch(page, palette); await watch(page, '[data-slot="dialog-overlay"]'); await page.keyboard.press('ControlOrMeta+k'); await page.locator(palette).waitFor(); },
@@ -325,6 +490,28 @@ export const SCENARIOS = {
       ...NO_MOTION,
       act: async page => { await watch(page, '[data-slot="dialog-content"]'); await page.getByLabel('Upload avatar image').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: gradientPng(480, 320) }); await page.getByRole('dialog').waitFor(); },
       check: async page => moves(await firstOpen(page, '[data-slot="dialog-content"]'), 'a pointer-opened dialog'),
+    });
+    await h.capture('motion', 'crop-drag-transform', '#/settings/profile', {
+      ...NO_MOTION,
+      act: async page => {
+        await page.getByLabel('Upload avatar image').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: gradientPng(480, 320) });
+        const frame = page.getByRole('img', { name: 'Avatar crop preview' }); await frame.waitFor(); await page.waitForTimeout(400);
+        const img = frame.locator('img'), read = () => img.evaluate(el => ({ left: el.style.left, transform: el.style.transform, x: Math.round(el.getBoundingClientRect().left) }));
+        const box = await frame.boundingBox(), x = box.x + box.width / 2, y = box.y + box.height / 2;
+        h.cropStart = await read();
+        await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 30, y, { steps: 5 });
+        h.cropMid = await read();
+        await page.mouse.up(); await page.waitForTimeout(100);
+        h.cropEnd = await read();
+      },
+      check: async () => {
+        assert.equal(h.cropMid.left, h.cropStart.left, 'dragging does not re-render the image position');
+        assert.notEqual(h.cropMid.transform, '', 'dragging moves the image by transform');
+        assert.ok(Math.abs(h.cropMid.x - h.cropStart.x - 30) <= 1, `the image follows the pointer 1:1 (moved ${h.cropMid.x - h.cropStart.x}px for 30px)`);
+        assert.equal(h.cropEnd.transform, '', 'release clears the transform');
+        assert.notEqual(h.cropEnd.left, h.cropStart.left, 'release commits the new position');
+        assert.equal(h.cropEnd.x, h.cropMid.x, 'the committed position matches where the drag left the image');
+      },
     });
     await h.capture('motion', 'menu-keyboard-instant', '#/room/main', {
       ...NO_MOTION,
@@ -380,7 +567,9 @@ export const SCENARIOS = {
         await page.mouse.move(x, y + max + 100, { steps: 6 }); h.dragEdge = { shift: await shift(first), max };
         await page.mouse.move(x, y - 50, { steps: 6 }); await page.mouse.up(); await page.waitForTimeout(300); h.dragCancel = { order: await order(), shift: await shift(first) };
         const target = await row(second).boundingBox();
-        await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, target.y + target.height / 2, { steps: 8 }); await page.mouse.up(); await page.waitForTimeout(300);
+        await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, target.y + target.height / 2, { steps: 8 }); await page.mouse.up();
+        h.dragSettleEasing = await page.locator('[data-nav-kind="rooms"]').evaluateAll(rows => [...new Set(rows.flatMap(r => r.getAnimations().map(a => a.effect.getTiming().easing)))]);
+        await page.waitForTimeout(300);
         h.dragAfter = { order: await order(), shift: await shift(first), first, second };
       },
       check: async () => {
@@ -392,6 +581,7 @@ export const SCENARIOS = {
         const expected = [...h.dragBefore]; expected.splice(0, 2, h.dragAfter.second, h.dragAfter.first);
         assert.deepEqual(h.dragAfter.order, expected, 'dropping on the next row reorders the list');
         assert.equal(h.dragAfter.shift, 0, 'the dropped row settles with no leftover transform');
+        assert.deepEqual(h.dragSettleEasing, [HOUSE], 'the reorder settle reads the house curve from the token');
       },
     });
     const PHONE_MOTION = { reducedMotion: 'no-preference', variants: [VARIANTS[2]] }, nav = '[data-mobile="true"][data-swipe-direction]', navBackdrop = '[data-slot="drawer-overlay"]';
@@ -491,6 +681,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const h = await startHarness({
     tools: toExecutors([requestInputTool]),
     mcpInteractions(db, ledger) { return broker = createMcpInteractions(db, ledger, { waitMs: 600000 }); },
+    proactive: ({ db, ledger, runner }) => createProactive({ db, ledger, runner, wake: createWakeFilter({ db, ledger, tz: Intl.DateTimeFormat().resolvedOptions().timeZone }), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, connected: () => false }),
     runTurn: async ctx => {
       if (ctx.message.payload.text === 'ASK') { await ctx.callTool('request_input', { prompt: 'Which local option?' }); return; }
       ctx.ledger.append(ctx.room.id, ctx.bot.id, 'bot_output', { turnId: ctx.turnId, text: 'Received the message.' });

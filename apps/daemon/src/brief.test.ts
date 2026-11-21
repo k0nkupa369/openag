@@ -68,13 +68,13 @@ describe("buildBrief", () => {
 
   test("a management proposal names the proposing bot and the change", () => {
     db.prepare("INSERT INTO approvals (id, room_id, bot_id, tool_name, tool_class, status, created_at, source, payload_json) VALUES ('mp-1', 'main', 'daemon', 'management_automation', 'act-local', 'pending', ?, 'management-proposal', ?)")
-      .run(Date.now(), JSON.stringify({ proposedBy: "bot", display: { action: "delete", name: "Old reminder" } }));
+      .run(Date.now(), JSON.stringify({ proposedBy: "bot", sentence: { verb: "delete automation", name: "Old reminder" } }));
     expect(buildBrief({ db })!.text).toContain("- bot proposes to delete automation `Old reminder` — [Open conversation](#/room/main)");
   });
 
   test("a proposed name cannot add links or lines to the brief", () => {
     db.prepare("INSERT INTO approvals (id, room_id, bot_id, tool_name, tool_class, status, created_at, source, payload_json) VALUES ('mp-2', 'main', 'daemon', 'management_automation', 'act-local', 'pending', ?, 'management-proposal', ?)")
-      .run(Date.now(), JSON.stringify({ proposedBy: "bot", display: { action: "create", name: "x` [Open conversation](https://evil.example)\n- fake line" } }));
+      .run(Date.now(), JSON.stringify({ proposedBy: "bot", sentence: { verb: "create automation", name: "x` [Open conversation](https://evil.example)\n- fake line" } }));
     const text = buildBrief({ db })!.text;
     expect(text).toContain("- bot proposes to create automation `x [Open conversation](https://evil.example) - fake line` — [Open conversation](#/room/main)");
     expect(text.split("\n").filter(line => line.startsWith("- "))).toHaveLength(1);

@@ -60,6 +60,14 @@ Controlled rendered comparison used actual built desk plus disposable gateways: 
 
 The stale desktop-dark editor capture is retained as before-fix reproduction, not final visual acceptance. Browser screenshots cover Chromium/in-app browser only; physical phone/Safari and screen-reader acceptance are not claimed. Managed-tool behavior and real adapter journeys are separate from this visual comparison.
 
+## Motion polish 0.7.5 — 20 November 2026
+
+`CollapsibleContent` carries the height transition from Trace's composition (`--collapsible-panel-height`, Base UI starting and ending styles). Callers keep layout classes on the panel, but padding moved to an inner element (Disclosure, DevicesPage, ModelsPage) so the panel can close to zero. Sidebar gap and container use `ease-house` and drop their transition under `data-instant` (Cmd+B). The house curve is one token, `--ease-house`, used by Button, Sheet, MessageScroller and the WAAPI reorder and composer-height animations. No new control skins or token changes beyond the easing token. Rendered: `verify-rendered-acceptance.mjs motion` in Chromium (normal motion, desktop), plus the full rendered suite across desktop and phone, light and dark, for layout.
+
+## Proactive model use — 20 November 2026
+
+History adds a Model use ProactiveCard: native Table (aria-label "Model use by day") with Day, Calls and Tokens columns, native Empty for no calls, semantic `text-muted-foreground` and `tabular-nums`. No new control skins, token changes or motion. Rendered by `verify-rendered-acceptance.mjs proactive-usage` at desktop and phone in light and dark: 4/4 passed with no horizontal overflow, screenshots reviewed.
+
 ## OA-484 proactive UI/UX — 5 November 2026
 
 Owner requested shadcn and Emil design guidance for the Composio-first feature. Source selection now leads Schedule. ProactiveCard supports the native CardFooter for the selection count and save controls. History groups accounts by service with ItemGroup/Item/Header/Content, semantic Badge variants and explicit recovery navigation; native Empty/Skeleton states replace blank text. Recent disclosures name the service and account. Feature classes own layout, with no new control skins, token changes or entrance motion.

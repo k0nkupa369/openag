@@ -12,7 +12,7 @@ const topic = z.object({
   sources: z.array(z.string().min(1).max(160)).min(1).max(8),
   body: z.string().min(1).refine(s => Buffer.byteLength(s) <= HELP_TOPIC_MAX),
 }).strict();
-export const handbookSchema = z.array(topic).min(1).max(13).refine(topics => new Set(topics.map(t => t.slug)).size === topics.length)
+export const handbookSchema = z.array(topic).min(1).max(16).refine(topics => new Set(topics.map(t => t.slug)).size === topics.length)
   .refine(topics => JSON.stringify(getDefaultRedactor().redact(topics)) === JSON.stringify(topics), "Handbook contains a credential; remove it before publishing");
 export const handbookVersion = (topics: z.infer<typeof handbookSchema>) => createHash("sha256").update(JSON.stringify(topics)).digest("hex");
 

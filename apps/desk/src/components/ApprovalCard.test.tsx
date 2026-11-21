@@ -167,3 +167,44 @@ describe("ApprovalCard management proposals", () => {
     expect(card.getByRole("button", { name: "Respond" })).toBeTruthy();
   });
 });
+
+describe("ApprovalCard settings proposals", () => {
+  const proposal = (toolName: string, sentence: { verb: string; name: string | null }, changes: { field: string; from: string; to: string }[]): Approval => ({
+    ...approval("s1", toolName, { feature: "heartbeat", base: {}, value: {}, proposedBy: "bot", sentence, display: { changes } }),
+    botId: "daemon", turnId: null, source: "management-proposal", canEdit: false,
+  });
+
+  it("states the change and shows before and after, with Apply change and Ignore only", () => {
+    const { container, onDecide } = setup(proposal("management_proactive", { verb: "change the scheduled checks", name: null }, [{ field: "Interval", from: "Every 180 minutes", to: "Every 60 minutes" }]));
+    const card = within(container.querySelector('[role="article"]') as HTMLElement);
+    expect(card.getByText("bot proposes to change the scheduled checks")).toBeTruthy();
+    const change = within(card.getByRole("region", { name: "Proposed change" }));
+    expect(change.getByText("Interval")).toBeTruthy();
+    expect(change.getByText("Every 180 minutes → Every 60 minutes")).toBeTruthy();
+    expect(card.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(card.queryByRole("button", { name: "Respond" })).toBeNull();
+    fireEvent.click(card.getByRole("button", { name: "Apply change" }));
+    expect(onDecide).toHaveBeenCalledWith("s1", { kind: "accept", reviewVersion: "fixture-review" });
+  });
+
+  it("quotes a named destination", () => {
+    const { container } = setup(proposal("management_delivery_room", { verb: "send proactive messages to", name: "Ops" }, [{ field: "Delivery", from: "The default bot's direct chat", to: "Ops" }]));
+    expect(within(container.querySelector('[role="article"]') as HTMLElement).getByText("bot proposes to send proactive messages to “Ops”")).toBeTruthy();
+  });
+
+  it("shows only the new value for something new, and the card's notes", () => {
+    const base = proposal("management_room", { verb: "change room", name: "Team" }, [{ field: "Name", from: "", to: "Launch plan" }, { field: "Agents", from: "Coder, Writer", to: "Writer" }]);
+    const { container } = setup({ ...base, payload: { ...(base.payload as object), display: { changes: (base.payload as { display: { changes: unknown[] } }).display.changes, notes: ["1 automation in this room runs as this agent and will stop running."] } } });
+    const change = within(within(container.querySelector('[role="article"]') as HTMLElement).getByRole("region", { name: "Proposed change" }));
+    expect(change.getByText("Launch plan")).toBeTruthy();
+    expect(change.getByText("Coder, Writer → Writer")).toBeTruthy();
+    expect(change.getByText("1 automation in this room runs as this agent and will stop running.")).toBeTruthy();
+  });
+
+  it("is read-only on a device that cannot decide", () => {
+    const { container } = render(<ApprovalCard approval={proposal("management_proactive", { verb: "turn on the morning brief", name: null }, [])} onDecide={vi.fn()} canDecide={false} />);
+    const card = within(container.querySelector('[role="article"]') as HTMLElement);
+    expect(card.queryByRole("button", { name: "Apply change" })).toBeNull();
+    expect(card.getByText("Needs an owner or full-access device to decide.")).toBeTruthy();
+  });
+});

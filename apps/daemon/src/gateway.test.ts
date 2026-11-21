@@ -10,7 +10,7 @@ import { createApprovals } from "./approvals.js";
 import { type Db, openDb } from "./db/index.js";
 import { attachStream, createGateway, type DispatchArgs } from "./gateway.js";
 import { createLedger } from "./ledger.js";
-import { addMember, createBot, createRoom } from "./rooms.js";
+import { addMember, createBot, createRoom, getRoom } from "./rooms.js";
 
 const TOKEN = "test-token";
 const auth = { authorization: `Bearer ${TOKEN}` };
@@ -166,6 +166,20 @@ test("PATCH /rooms/:id renames, describes and changes the lead (owner only, memb
   expect(ledger.list("main").find((e) => (e.payload as { action?: string }).action === "room_lead_changed")?.payload).toMatchObject({ from: "boss", to: "coder" });
   // Omitted fields are kept.
   expect(((await (await patch({ description: "" })).json()) as { room: Record<string, unknown> }).room).toMatchObject({ name: "Team room", leadBotId: "coder", description: "" });
+});
+
+test("PATCH /rooms/:id removes agents; the lead must be replaced first and a room keeps one agent", async () => {
+  const { app, ledger } = ctx;
+  const patch = (body: unknown) => app.request("/rooms/main", { method: "PATCH", headers: json, body: JSON.stringify(body) });
+  const members = getRoom(db, "main")!.members;
+  expect(members).toContain("coder");
+  expect((await patch({ removeMembers: ["boss"] })).status).toBe(400);
+  expect((await patch({ removeMembers: ["outsider-x"] })).status).toBe(400);
+  expect((await patch({ removeMembers: ["coder"], addMembers: ["coder"] })).status).toBe(400);
+  const res = await patch({ removeMembers: ["boss"], leadBotId: "coder" });
+  expect(res.status).toBe(200);
+  expect(getRoom(db, "main")).toMatchObject({ leadBotId: "coder", members: members.filter(id => id !== "boss") });
+  expect(ledger.list("_system").find(e => (e.payload as { action?: string }).action === "room_updated")?.payload).toMatchObject({ removedMembers: ["boss"], lead: { from: "boss", to: "coder" } });
 });
 
 test("missing index.html -> GET / is 503", async () => {

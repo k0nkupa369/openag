@@ -6,7 +6,7 @@ import type { Ledger } from './ledger.js';
 import type { Runner } from './runtimes/runner.js';
 import type { Scheduler } from './scheduler.js';
 import type { WakeFilter } from './wake.js';
-import { parseVerdict } from './wake.js';
+import { localDateKey, parseVerdict } from './wake.js';
 import { getSetting } from './settings.js';
 import { getDefaultBotId } from './defaultbot.js';
 import { addMember, getBot, getRoom } from './rooms.js';
@@ -15,6 +15,21 @@ import { checkLabel, composioData, failureReason, readPage, readRequest, searchS
 
 const PREFIX = 'mcp.composio-connect.';
 const DAY = 86_400_000;
+const USAGE_DAYS = 14;
+
+export interface ProactiveDailyUsage {
+  date: string;
+  calls: number;
+  models: string[];
+  tokens: { input: number; output: number; reportedCalls: number } | null;
+}
+
+/** A check that is behind runs at most this many back-to-back rounds per account: one 20-item read and one assessment each. */
+const CATCH_UP_ROUNDS = 5;
+/** New catch-up rounds start only this soon after the check began, leaving the rest of the 5-minute limit for other services. */
+const CATCH_UP_WINDOW = 120_000;
+/** A completed window that ended longer ago than this means coverage is still behind the present. */
+const CATCH_UP_LAG = 15 * 60_000;
 const selection = z.object({ baseRevision: z.number().int().positive(), services: z.array(serviceSlug).max(12) }).strict();
 type ConfigRow = { revision: number; services_json: string; next_due_at: number; interval_minutes: number };
 type AccountRow = { service: string; account_id: string; alias: string; last_attempt_at: number | null; last_success_at: number | null; covered_until: number | null; cursor_json: string | null; status: string; reason: string | null; incident_id: string | null };
@@ -160,7 +175,7 @@ export function createProactive(deps: { db: Db; ledger: Ledger; runner: Runner; 
         db.prepare('UPDATE proactive_runs SET evidence_json=? WHERE id=?').run(JSON.stringify(redactor.redact(fresh)),id);
         if (prior.incident_id) deliver(revision, { source: 'proactive-health', deliveryKey: `proactive-recovery:${prior.incident_id}`, botId: identity().bot.id, turnId: null, text: JSON.stringify({ verdict: 'digest', urgency: 'low', reason: `${service} (${account.alias}) can be checked again.`, dedupe_key: `recovered:${prior.incident_id}` }) });
       });
-      return true;
+      return continuation || cursor.until < now() - CATCH_UP_LAG ? 'behind' : true;
     } catch (error) {
       if (!valid()) {
         if(selected(revision,service)){
@@ -187,6 +202,7 @@ export function createProactive(deps: { db: Db; ledger: Ledger; runner: Runner; 
     const transportFailures = new Set<string>();
     const controller = new AbortController(); controllers.add(controller);
     const deadline = setTimeout(() => controller.abort(), 300_000); deadline.unref();
+    const startedAt = now();
     try {
       if(!chosenBot()){finish(startRun(initial.revision,'composio',null),'unavailable','Choose an available default bot before checking services');return;}
       if (!deps.connected()) {
@@ -222,9 +238,12 @@ export function createProactive(deps: { db: Db; ledger: Ledger; runner: Runner; 
               if(selected(initial.revision,service))db.prepare("UPDATE proactive_accounts SET status='not_checked',reason='Check deferred after the execution limit' WHERE service=? AND account_id=?").run(service,account.id);
               continue;
             }
-            const result=await inspectAccount(initial.revision, service, account, controller.signal);
+            let result=await inspectAccount(initial.revision, service, account, controller.signal);
+            for(let round=1;result==='behind'&&round<CATCH_UP_ROUNDS&&now()-startedAt<CATCH_UP_WINDOW&&!controller.signal.aborted&&selected(initial.revision,service);round++){
+              result=await inspectAccount(initial.revision, service, account, controller.signal);
+            }
             if(result==='transport')transportFailures.add(service);
-            else if(result===true)readSucceeded=true;
+            else if(result===true||result==='behind')readSucceeded=true;
           }
         } catch(error) {
           if (!selected(initial.revision, service)) continue;
@@ -261,6 +280,26 @@ export function createProactive(deps: { db: Db; ledger: Ledger; runner: Runner; 
     }
   });
 
+  function usage(): ProactiveDailyUsage[] {
+    const rows = db.prepare(`SELECT ts, type, json_extract(payload_json,'$.status') AS status, json_extract(payload_json,'$.requestedModel') AS model,
+        json_extract(payload_json,'$.usage.source') AS source, json_extract(payload_json,'$.usage.inputTokens') AS input, json_extract(payload_json,'$.usage.outputTokens') AS output
+      FROM events WHERE room_id='_proactive' AND type IN ('request_prepared','request_attempt') AND ts>=?`).all(now() - USAGE_DAYS * DAY) as Array<{ ts: number; type: string; status: string | null; model: string | null; source: string | null; input: number | null; output: number | null }>;
+    const days = new Map<string, { calls: number; models: Set<string>; input: number; output: number; reportedCalls: number }>();
+    for (const row of rows) {
+      const date = localDateKey(new Date(row.ts), deps.tz);
+      const day = days.get(date) ?? { calls: 0, models: new Set<string>(), input: 0, output: 0, reportedCalls: 0 };
+      days.set(date, day);
+      if (row.type === 'request_prepared' && typeof row.model === 'string') day.models.add(row.model);
+      else if (row.status === 'started') day.calls++;
+      else if (row.status === 'returned' && row.source === 'provider-reported' && typeof row.input === 'number' && typeof row.output === 'number') {
+        day.input += row.input; day.output += row.output; day.reportedCalls++;
+      }
+    }
+    const first = localDateKey(new Date(now() - (USAGE_DAYS - 1) * DAY), deps.tz);
+    return [...days].filter(([date, day]) => date >= first && day.calls > 0).sort(([a], [b]) => b.localeCompare(a))
+      .map(([date, day]) => ({ date, calls: day.calls, models: [...day.models].sort(), tokens: day.reportedCalls ? { input: day.input, output: day.output, reportedCalls: day.reportedCalls } : null }));
+  }
+
   function status() {
     const current = config();
     const accounts = (db.prepare('SELECT service,account_id AS accountId,alias,last_attempt_at AS lastAttemptAt,last_success_at AS lastSuccessAt,covered_until AS coveredUntil,status,reason FROM proactive_accounts ORDER BY service,account_id').all() as Array<Record<string, unknown>>)
@@ -270,7 +309,7 @@ export function createProactive(deps: { db: Db; ledger: Ledger; runner: Runner; 
         const { evidence_json, revision, ...run } = item;
         return { ...run, reason: revision === current.revision ? run.reason : 'Monitoring selection changed', evidence: revision === current.revision ? JSON.parse(String(evidence_json)) : [] };
       });
-    return { ...current, checking, services: current.services.map(id => ({ id, check: checkLabel(id) })), accounts, runs };
+    return { ...current, checking, services: current.services.map(id => ({ id, check: checkLabel(id) })), accounts, runs, usage: usage() };
   }
 
   return {

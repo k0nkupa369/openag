@@ -24,6 +24,8 @@ const { setSetting } = await load('settings'), { createWakeFilter } = await load
 const { createScheduler } = await load('scheduler'), { buildBrief, deliverBrief } = await load('brief'), { getDefaultRedactor } = await load('redact');
 const schemas = JSON.parse(readFileSync(root + 'docs/notes/proactive-composio-contracts-2026-11-05.json')).contracts;
 const instances = [], calls = [], notices = [];
+// One check reads at most five catch-up rounds of two pages, so eleven pages leave one for the restart.
+const GMAIL_LARGE_PAGES = 11;
 let failure = false, accountMissing = false, addedAccount = false, paging = false, connected = true, afterRead, summaryMode = 'digest', providerError = '', invalidContinuation = false, wireOutage = false, inventoryError = '', unsafeNavigation = false, navigationOverride, acpStop = 'end_turn', gmailStatus = 'active', gmailLarge = false, gmailBadId = false, gmailEnvelopeError = '';
 let clock = Date.UTC(2026, 10, 5, 2), version = 1;
 const accounts = () => ({ outlook: [{id:'outlook-work',alias:'Work',status:'active'}, ...(accountMissing ? [] : [{id:'outlook-personal',alias:'Personal',status:failure?'expired':'Active'}]), ...(addedAccount?[{id:'outlook-new',alias:'New account',status:' active '}]:[])], gmail: [{id:'gmail-work',alias:'Gmail',status:gmailStatus}], github: [{id:'github-work',alias:'GitHub',status:'ACTIVE'}], asana: [{id:'asana-work',alias:'Asana',status:'ACTIVE'}] });
@@ -53,7 +55,7 @@ const server = serve({ hostname:'127.0.0.1', port:0, fetch:async req => {
       for(const [key,value] of Object.entries({$filter:tool.arguments.filter,$select:tool.arguments.select?.join(','),$top:tool.arguments.top,$orderby:tool.arguments.orderby,$skiptoken:unsafeNavigation?'fixture-private-secret-98147':marker==='page0'?'first':'second'}))if(value!==undefined)next.searchParams.set(key,String(value));
       if(tool.arguments.page_token)assert.ok(!tool.arguments.page_token.includes('REDACTED')&&!tool.arguments.page_token.startsWith('nav1:'));
       const body = service==='outlook'?{value:[page],...(paging?{'@odata.nextLink':navigationOverride===undefined?next.href:navigationOverride}:{})}:service==='gmail'?{messages:[page]}:[page];
-      if(service==='gmail'&&gmailLarge){const n=tool.arguments.page_token==='gmail-page-3'?3:tool.arguments.page_token==='gmail-page-2'?2:1;body.messages=Array.from({length:n===3?1:10},(_,i)=>({messageId:gmailBadId?null:`large-${n}-${i}`,messageTimestamp:'2026-11-05T00:00:00Z',subject:'Large message',sender:'Synthetic sender',preview:n===3?null:'A bounded preview with a direct request',messageText:'Quoted full HTML body '.repeat(5000),attachmentList:[{data:'x'.repeat(30000)}]}));if(n<3)body[n===2?'continuation':'nextPageToken']=`gmail-page-${n+1}`;body.extraMetadata='x'.repeat(30000);}
+      if(service==='gmail'&&gmailLarge){const last=GMAIL_LARGE_PAGES,n=tool.arguments.page_token?Number(String(tool.arguments.page_token).slice('gmail-page-'.length)):1;body.messages=Array.from({length:n===last?1:10},(_,i)=>({messageId:gmailBadId?null:`large-${n}-${i}`,messageTimestamp:'2026-11-05T00:00:00Z',subject:'Large message',sender:'Synthetic sender',preview:n===last?null:'A bounded preview with a direct request',messageText:'Quoted full HTML body '.repeat(5000),attachmentList:[{data:'x'.repeat(30000)}]}));if(n<last)body[n%2===0?'continuation':'nextPageToken']=`gmail-page-${n+1}`;body.extraMetadata='x'.repeat(30000);}
       data = {results:[{tool_slug:tool.tool_slug,response:invalidContinuation&&tool.arguments.page_token?{successful:false,data:null,error:'Invalid page_token; continuation expired'}:providerError && tool.account==='gmail-work'?{successful:false,data:null,error:providerError}:{successful:true,data:body}}]};
       if(gmailEnvelopeError==='row'&&service==='gmail')data.results[0].error='Controlled partial failure';
       if(afterRead)await afterRead(tool);
@@ -177,7 +179,7 @@ try {
   assert.equal(view.accounts.find(a=>a.accountId==='gmail-work').coveredUntil,gmailFrontier);
   const retained=JSON.parse(db.prepare("SELECT cursor_json FROM proactive_accounts WHERE service='gmail' AND account_id='gmail-work'").get().cursor_json);
   assert.ok(retained,'A fixed window must be retained');
-  assert.equal(retained.page,3,'Two completed pages retain the next page');
+  assert.equal(retained.page,GMAIL_LARGE_PAGES,'Five catch-up rounds of two pages retain the next page');
   assert.equal(view.runs.find(r=>r.service==='gmail').items,20,'Every ID from both pages reaches assessment');
   const texts=view.runs.find(r=>r.service==='gmail').evidence.map(i=>i.text).join(' ');
   assert.ok(texts.includes('bounded preview')&&texts.includes('Synthetic sender'));
@@ -188,7 +190,7 @@ try {
   assert.equal(view.accounts.find(a=>a.accountId==='gmail-work').status,'checked');
   assert.ok(view.runs.find(r=>r.service==='gmail').evidence[0].text.includes('Quoted full HTML'),'A missing preview falls back to a bounded messageText excerpt');
   assert.equal(view.accounts.find(a=>a.accountId==='gmail-work').coveredUntil,retained.until,'Restart completes the original fixed window');
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM proactive_seen WHERE service='gmail' AND item_id LIKE 'large-%'").get().n,21,'No IDs lost across continuation and restart');
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM proactive_seen WHERE service='gmail' AND item_id LIKE 'large-%'").get().n,(GMAIL_LARGE_PAGES-1)*10+1,'No IDs lost across continuation and restart');
   assert.equal(db.prepare("SELECT cursor_json FROM proactive_accounts WHERE service='gmail' AND account_id='gmail-work'").get().cursor_json,null);
   gmailBadId=true;clock+=60_000;await proactive.check();
   assert.equal((await status()).accounts.find(a=>a.accountId==='gmail-work').coveredUntil,retained.until,'Malformed IDs cannot establish coverage');
@@ -256,7 +258,7 @@ try {
   afterRead=async tool=>{if(tool.account!=='outlook-work')return;afterRead=undefined;await req('/settings/heartbeat','PUT',{enabled:false,everyMinutes:60});};
   await proactive.check();const retainedWindow=JSON.parse(db.prepare("SELECT cursor_json FROM proactive_accounts WHERE service='outlook' AND account_id='outlook-work'").get().cursor_json);assert.equal(retainedWindow.from,initialWindow.from);assert.equal(retainedWindow.until,initialWindow.until);
   proactive.close();clock+=21_600_000;proactive=createProactive({db,ledger,runner,wake,tz:'Pacific/Auckland',now:()=>clock,connected:()=>connected});app=createGateway({db,ledger,approvals,auth,dataDir:dir,proactive,work:runner.work,dispatch(){}});
-  await req('/settings/heartbeat','PUT',{enabled:true,everyMinutes:60});const resumedStart=calls.length;await proactive.check();const retainedRead=calls.slice(resumedStart).find(call=>call.name==='COMPOSIO_MULTI_EXECUTE_TOOL'&&call.args.tools[0].account==='outlook-work');assert.ok(retainedRead.args.tools[0].arguments.filter.includes(new Date(initialWindow.from).toISOString()));assert.equal((await status()).accounts.find(account=>account.accountId==='outlook-work').coveredUntil,initialWindow.until);
+  await req('/settings/heartbeat','PUT',{enabled:true,everyMinutes:60});const resumedStart=calls.length;await proactive.check();const retainedRead=calls.slice(resumedStart).find(call=>call.name==='COMPOSIO_MULTI_EXECUTE_TOOL'&&call.args.tools[0].account==='outlook-work');assert.ok(retainedRead.args.tools[0].arguments.filter.includes(new Date(initialWindow.from).toISOString()));view=await status();assert.ok(view.runs.some(run=>run.accountId==='outlook-work'&&run.fromAt===initialWindow.from&&run.untilAt===initialWindow.until&&run.status!=='incomplete'),'The retained window completes first');assert.equal(view.accounts.find(account=>account.accountId==='outlook-work').coveredUntil,clock,'A completed stale window is followed by a fresh window to now in the same check');
   console.log('PASS initial coverage window survives first-read cancellation and coordinator restart without dropping its earliest range');
 
   const deskRequire=createRequire(root+'apps/desk/package.json');

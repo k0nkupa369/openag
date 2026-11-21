@@ -12,7 +12,7 @@ const read = url => {
   return readFileSync(url, 'utf8');
 };
 const manifest = JSON.parse(read(new URL('manifest.json', source)));
-if (!Array.isArray(manifest) || manifest.length > 13) throw Error('Invalid handbook manifest');
+if (!Array.isArray(manifest) || manifest.length > 16) throw Error('Invalid handbook manifest');
 const topics = handbookSchema.parse(manifest.map(entry => {
   if (!/^[a-z0-9-]{1,40}$/.test(entry.slug)) throw Error('Invalid topic ID');
   return { ...entry, body: read(new URL(entry.slug + '.md', source)) };

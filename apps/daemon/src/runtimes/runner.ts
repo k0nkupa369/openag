@@ -30,7 +30,7 @@ import { ensureMemoryFile, memoryPath, readMemoryHead } from "../memory.js";
 import { createSkillCatalogue, type SkillCatalogue } from "../skills.js";
 import { type Bot, getBot, getRoom, type Room, type Runtime } from "../rooms.js";
 import { getDefaultRedactor, type Redactor } from "../redact.js";
-import { classify, turnToolRestriction, sessionToolMode,sessionRequirement,operationClass } from "../policy.js";
+import { classify, turnToolRestriction, sessionToolMode,sessionRequirement,operationClass,isProposalTool } from "../policy.js";
 import { createToolGate } from "./gate.js";
 import { type Pregrant, pregrantMatches } from "./pregrant.js";
 import type { VectorMemory } from "../vectors.js";
@@ -575,11 +575,11 @@ export function createRunner(deps: RunnerDeps): Runner {
         }
       },
       authorize: async (toolName, args, opts) => {
-        if(guestAssignment&&['agent_consult','agent_send','agent_request_cancel','create_work','propose_automation'].includes(toolName))return {allowed:false,status:'denied',message:'Guest Work cannot delegate, create additional Work or propose changes.'};
+        if(guestAssignment&&(['agent_consult','agent_send','agent_request_cancel','create_work'].includes(toolName)||isProposalTool(toolName)))return {allowed:false,status:'denied',message:'Guest Work cannot delegate, create additional Work or propose changes.'};
         if(readCheck&&(!readCheck.valid()||readCheck.signal.aborted||!readCheck.allows(toolName,args)))return {allowed:false,status:'denied',message:'Proactive read scope changed or forbids this operation.'};
         if(toolName.startsWith('agent_')&&!['agent_list','agent_consult','agent_send','agent_request_cancel'].includes(toolName)&&(state.unattended||state.isolated||state.agentRequestId||state.source||investigation))return {allowed:false,status:'denied',message:'Agent management requires an interactive conversation.'};
-        if(state.agentRequestId && ['agent_send','agent_consult','agent_request_cancel','create_work','memory_append','request_input','save_result','propose_automation'].includes(toolName))return {allowed:false,status:'denied',message:'This bounded agent request cannot delegate, create Work, change memory, request input or propose changes.'};
-        if(toolName==='propose_automation'&&(state.unattended||state.isolated||room.id.startsWith('_')||bot.id!==getDefaultBotId(db)))return {allowed:false,status:'denied',message:'Only the default bot can propose changes, and only in an interactive conversation.'};
+        if(state.agentRequestId && (['agent_send','agent_consult','agent_request_cancel','create_work','memory_append','request_input','save_result'].includes(toolName)||isProposalTool(toolName)))return {allowed:false,status:'denied',message:'This bounded agent request cannot delegate, create Work, change memory, request input or propose changes.'};
+        if(isProposalTool(toolName)&&(state.unattended||state.isolated||room.id.startsWith('_')||bot.id!==getDefaultBotId(db)))return {allowed:false,status:'denied',message:'Only the default bot can propose changes, and only in an interactive conversation.'};
         if(['agent_consult','agent_send','agent_request_cancel'].includes(toolName)&&(state.unattended||state.isolated||(['agent_consult','agent_send'].includes(toolName)&&state.noNetwork)||state.agentRequestId||state.source||investigation||!mayDelegate(bot,room)))return {allowed:false,status:'denied',message:'Consultation is unavailable under this turn scope.'};
         if(toolName==='investigation_read'&&!investigation)return {allowed:false,status:'denied',message:'This read requires a trusted investigation'};
         if(investigation&&(toolName!=='investigation_read'||!investigation.valid()||investigation.signal.aborted))return {allowed:false,status:'denied',message:'Investigation scope forbids this operation'};

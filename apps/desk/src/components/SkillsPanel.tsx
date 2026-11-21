@@ -116,12 +116,12 @@ export function SkillsPanel({ api, botId: scopedBotId }: { api: Api; botId?: str
           <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{skill.description}</p>
           <Separator />
           <EvidenceBlock data-testid="skill-body" className="max-h-[50dvh]">{skill.body}</EvidenceBlock>
-          <Collapsible className="flex flex-col gap-3"><CollapsibleTrigger render={<Button variant="ghost" size="sm" className="justify-start" />}><Info data-icon="inline-start" />Package details<ChevronDown data-icon="inline-end" /></CollapsibleTrigger>
-            <CollapsibleContent className="flex min-w-0 flex-col gap-4">
+          <Collapsible><CollapsibleTrigger render={<Button variant="ghost" size="sm" className="justify-start" />}><Info data-icon="inline-start" />Package details<ChevronDown data-icon="inline-end" /></CollapsibleTrigger>
+            <CollapsibleContent><div className="flex min-w-0 flex-col gap-4 pt-3">
               {!!skill.triggers.length && <p className="text-sm text-muted-foreground">Triggers: {skill.triggers.join(", ")}</p>}
               <div className="flex flex-col gap-1"><p className="text-sm font-medium">Requirements</p><p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{selectedEntry?.requirements ?? "No requirements declared."}</p><p className="text-sm text-muted-foreground">Requirements have not been verified.</p></div>
               {!!skill.resources?.length && <div className="flex flex-col gap-2"><p className="text-sm font-medium">Resources</p><ul className="flex flex-col gap-2">{skill.resources.map(path => <li key={path} className="flex min-w-0 items-start gap-2 text-xs text-muted-foreground"><FileText aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" /><span className="[overflow-wrap:anywhere]">{path}</span></li>)}</ul></div>}
-            </CollapsibleContent>
+            </div></CollapsibleContent>
           </Collapsible>
         </> : !error && <div aria-label="Loading skill" className="flex flex-col gap-3"><Skeleton className="h-4 w-2/3 motion-reduce:animate-none" /><Skeleton className="h-48 w-full motion-reduce:animate-none" /></div>}
       </section> : <>
@@ -148,7 +148,7 @@ export function SkillsPanel({ api, botId: scopedBotId }: { api: Api; botId?: str
             </li>;
           })}</ul>
         </FieldSet>}
-        <Collapsible className="flex flex-col gap-3"><CollapsibleTrigger render={<Button variant="ghost" size="sm" className="justify-start" />}><Info data-icon="inline-start" />About skills<ChevronDown data-icon="inline-end" /></CollapsibleTrigger><CollapsibleContent><p className="text-sm leading-relaxed text-muted-foreground">Shared packages start unassigned. OpenAg skill tools keep shared files read-only; other file and shell tools keep their own permissions. Loading a skill never approves its actions or runs its scripts. {canManage ? "Library changes affect all agents; assignments apply to this agent." : "A Full access device can change the library and assignments."}</p></CollapsibleContent></Collapsible>
+        <Collapsible><CollapsibleTrigger render={<Button variant="ghost" size="sm" className="justify-start" />}><Info data-icon="inline-start" />About skills<ChevronDown data-icon="inline-end" /></CollapsibleTrigger><CollapsibleContent><div className="pt-3"><p className="text-sm leading-relaxed text-muted-foreground">Shared packages start unassigned. OpenAg skill tools keep shared files read-only; other file and shell tools keep their own permissions. Loading a skill never approves its actions or runs its scripts. {canManage ? "Library changes affect all agents; assignments apply to this agent." : "A Full access device can change the library and assignments."}</p></div></CollapsibleContent></Collapsible>
       </>}
     </>}
   </div>;

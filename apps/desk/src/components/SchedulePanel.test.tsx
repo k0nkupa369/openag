@@ -63,7 +63,7 @@ const dayButton = (group: string, day: string) =>
 
 describe("SchedulePanel", () => {
   it("shows the defaults when nothing is configured", async () => {
-    render(<SchedulePanel api={makeApi()} />);
+    render(<SchedulePanel canManage api={makeApi()} />);
     await flush();
     expect(screen.getByRole("switch", { name: "Enable scheduled checks" }).getAttribute("aria-checked")).toBe("false");
     expect((screen.getByLabelText("Check every (minutes)") as HTMLInputElement).value).toBe("60");
@@ -77,7 +77,7 @@ describe("SchedulePanel", () => {
 
   it("shows the waiting digest count and sends the brief now with a result note", async () => {
     const api = makeApi(DEFAULTS, { sendBriefNow: vi.fn(async () => ({ sent: false, reason: "empty" })) });
-    render(<SchedulePanel api={api} />);
+    render(<SchedulePanel canManage api={api} />);
     await flush();
     expect(screen.getByText("Waiting digest items: 1")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Send brief now" }));
@@ -89,7 +89,7 @@ describe("SchedulePanel", () => {
 
   it("saves the brief settings with the schedule", async () => {
     const api = makeApi();
-    render(<SchedulePanel api={api} />);
+    render(<SchedulePanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("switch", { name: "Enable morning brief" }));
     fireEvent.change(screen.getByLabelText("Brief time"), { target: { value: "08:15" } });
@@ -102,7 +102,7 @@ describe("SchedulePanel", () => {
 
   it("toggling the heartbeat and saving sends the right bodies", async () => {
     const api = makeApi();
-    render(<SchedulePanel api={api} />);
+    render(<SchedulePanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("switch", { name: "Enable scheduled checks" }));
     fireEvent.change(screen.getByLabelText("Check every (minutes)"), { target: { value: "15" } });
@@ -131,7 +131,7 @@ describe("SchedulePanel", () => {
 
   it("the default bot option saves botId as null and keeps the stored prompt", async () => {
     const api = makeApi({ ...DEFAULTS, heartbeat: { ...DEFAULTS.heartbeat, botId: "boss", prompt: "custom" } });
-    render(<SchedulePanel api={api} />);
+    render(<SchedulePanel canManage api={api} />);
     await flush();
     const agent = screen.getByRole("combobox", { name: "Agent" });
     expect(agent.textContent).toContain("Boss");
@@ -145,7 +145,7 @@ describe("SchedulePanel", () => {
 
   it("an out-of-range interval shows an inline error and sends nothing", async () => {
     const api = makeApi();
-    render(<SchedulePanel api={api} />);
+    render(<SchedulePanel canManage api={api} />);
     await flush();
     fireEvent.change(screen.getByLabelText("Check every (minutes)"), { target: { value: "2" } });
     fireEvent.submit(screen.getByRole("button", { name: "Save checking frequency" }).closest("form")!);
@@ -160,7 +160,7 @@ describe("SchedulePanel", () => {
         throw new ApiError("everyMinutes: Too small", 400);
       }),
     });
-    render(<SchedulePanel api={api} />);
+    render(<SchedulePanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Save checking frequency" }));
     await flush();
@@ -171,13 +171,13 @@ describe("SchedulePanel", () => {
 
   it("shows a load error when settings cannot be read", async () => {
     const api = makeApi(DEFAULTS, { getSettings: vi.fn(async () => { throw new Error("offline"); }) });
-    render(<SchedulePanel api={api} />);
+    render(<SchedulePanel canManage api={api} />);
     await flush();
     expect(screen.getByRole("alert").textContent).toContain("offline");
   });
 
   it("shows recent wake decisions as text with the downgrade reason", async () => {
-    render(<SchedulePanel api={makeApi()} />);
+    render(<SchedulePanel canManage api={makeApi()} />);
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Recent notification decisions" }));
     expect(screen.getByText("digest")).toBeTruthy();
@@ -189,7 +189,7 @@ describe("SchedulePanel", () => {
 
   it("saves the wake settings and refreshes the decisions", async () => {
     const api = makeApi();
-    render(<SchedulePanel api={api} />);
+    render(<SchedulePanel canManage api={api} />);
     await flush();
     fireEvent.change(screen.getByLabelText("Daily notification limit"), { target: { value: "5" } });
     fireEvent.change(screen.getByLabelText("Suppress repeated alerts (hours)"), { target: { value: "12" } });
@@ -204,7 +204,7 @@ describe("SchedulePanel", () => {
 
   it("rejects a daily ping budget above 50 without saving", async () => {
     const api = makeApi();
-    render(<SchedulePanel api={api} />);
+    render(<SchedulePanel canManage api={api} />);
     await flush();
     fireEvent.change(screen.getByLabelText("Daily notification limit"), { target: { value: "51" } });
     await act(async () => {
@@ -214,3 +214,19 @@ describe("SchedulePanel", () => {
     expect(api.putSetting).not.toHaveBeenCalled();
   });
 });
+
+const isDisabled = (el: Element) => el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true" || el.hasAttribute("data-disabled");
+
+describe("limited device", () => {
+  it("shows the schedule read-only and never saves", async () => {
+    const api = makeApi();
+    render(<SchedulePanel api={api} />);
+    expect(await screen.findByText("Needs an owner or full-access device.")).toBeTruthy();
+    for (const sw of screen.getAllByRole("switch")) expect(isDisabled(sw)).toBe(true);
+    const saves = screen.getAllByRole("button", { name: /^Save / });
+    expect(saves.length).toBeGreaterThan(0);
+    for (const b of saves) { expect(isDisabled(b)).toBe(true); fireEvent.click(b); }
+    expect(api.putSetting).not.toHaveBeenCalled();
+  });
+});
+

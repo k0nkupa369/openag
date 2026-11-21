@@ -142,7 +142,8 @@ describe("routes", () => {
     expect((await (await req(limited.token, "POST", "/push/web/test")).json())).toEqual({ ok: true });
     // Saving the ntfy fields alone (no webPush in the body) keeps Web Push on.
     const { webPush: _kept, ...ntfyOnly } = getSetting(db, "push");
-    expect((await req(limited.token, "PUT", "/settings/push", { ...ntfyOnly, includeDetail: true })).status).toBe(200);
+    expect((await req(limited.token, "PUT", "/settings/push", { ...ntfyOnly, includeDetail: true })).status).toBe(403);
+    expect((await req(OWNER, "PUT", "/settings/push", { ...ntfyOnly, includeDetail: true })).status).toBe(200);
     expect(getSetting(db, "push").webPush).toEqual({ enabled: true, subject: "mailto:o@example.com" });
     expect((await req(limited.token, "POST", "/push/web/rotate-key")).status).toBe(403);
     auth.revokeDeviceTree(limited.device.id, true);

@@ -22,6 +22,7 @@ let db: Db;
 let ledger: Ledger;
 let fetchMock: ReturnType<typeof vi.fn>;
 let app: ReturnType<typeof createGateway>;
+let authService: ReturnType<typeof createAuth>;
 let consoleSpies: ReturnType<typeof vi.spyOn>[];
 
 beforeEach(() => {
@@ -38,7 +39,7 @@ beforeEach(() => {
     db,
     ledger,
     approvals: createApprovals(db, ledger),
-    auth: createAuth({ db, ownerToken: TOKEN }),
+    auth: (authService = createAuth({ db, ownerToken: TOKEN })),
     dispatch: () => undefined,
     deskDir: join(dir, "no-desk"),
     push,
@@ -178,3 +179,21 @@ describe("push settings", () => {
     expect(((await res.json()) as { error: string }).error).toBeTruthy();
   });
 });
+
+describe("limited devices", () => {
+  test("cannot read the topic, generate one, send a test or change push settings", async () => {
+    setSetting(db, "push", { enabled: true, server: "https://ntfy.sh", topic: "openag-abcdefghijklmnopqrstuv", includeDetail: false });
+    const limited = authService.createDevice("phone");
+    const as = (token: string) => ({ authorization: `Bearer ${token}`, "content-type": "application/json" });
+    const listed = (await (await app.request("/settings", { headers: as(limited.token) })).json()) as { settings: { push: { topic: unknown } } };
+    expect(listed.settings.push.topic).toBe("(set)");
+    const owner = (await (await app.request("/settings", { headers: json })).json()) as { settings: { push: { topic: unknown } } };
+    expect(owner.settings.push.topic).toBe("openag-abcdefghijklmnopqrstuv");
+    expect((await app.request("/push/topic", { method: "POST", headers: as(limited.token) })).status).toBe(403);
+    expect((await app.request("/push/test", { method: "POST", headers: as(limited.token) })).status).toBe(403);
+    const redirect = { enabled: true, server: "https://attacker.example", topic: "attacker-topic-0000", includeDetail: true };
+    expect((await app.request("/settings/push", { method: "PUT", headers: as(limited.token), body: JSON.stringify(redirect) })).status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+

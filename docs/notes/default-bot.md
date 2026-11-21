@@ -35,4 +35,4 @@ another bot.
 Verified by `node scripts/verify-default-bot.mjs` (needs `pnpm -r build`).
 
 ## Management proposals (OA-347)
-The default bot can propose scheduled automations with `propose_automation`; the owner or a full-access device applies them by accepting the card in the conversation. See [default-bot-management-design.md](default-bot-management-design.md).
+The default bot can propose scheduled automations (`propose_automation`), the scheduled checks, morning brief and nightly reflection switches and schedules (`propose_proactive`) the message destination (`propose_delivery_room`), rooms (`propose_room`: create, rename, add or remove agents, lead) direct chats (`propose_direct_chat`) and paused standing responsibilities (`propose_responsibility`, refused while no mail source is connected); the owner or a full-access device applies them by accepting the card in the conversation. See [default-bot-management-design.md](default-bot-management-design.md).

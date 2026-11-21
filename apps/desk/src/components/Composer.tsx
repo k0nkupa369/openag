@@ -14,6 +14,7 @@ import { Button } from "./ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "./ui/input-group";
 import { Attachment as AttachmentSurface, AttachmentMedia, AttachmentContent, AttachmentTitle, AttachmentDescription, AttachmentActions, AttachmentAction } from "./ui/attachment";
 import { Alert, AlertDescription } from "./ui/alert";
+import { houseEase } from "@/lib/motion";
 
 // `@name` only addresses a bot at the start of the text or after whitespace (same rule as the daemon).
 const MENTION_AT_CARET = /(?<![^\s])@([A-Za-z0-9_-]*)$/;
@@ -118,7 +119,7 @@ export const Composer = forwardRef<ComposerHandle, { api: Api; roomId: string; o
       const after = element.getBoundingClientRect().height;
       if (pointerMotion.current && before !== after && !matchMedia("(prefers-reduced-motion: reduce)").matches && element.animate) {
         // This disclosure needs measured height so text and icons keep their shape.
-        heightMotion.current = element.animate([{ height: `${before}px` }, { height: `${after}px` }], { duration: 150, easing: "cubic-bezier(0.23, 1, 0.32, 1)" });
+        heightMotion.current = element.animate([{ height: `${before}px` }, { height: `${after}px` }], { duration: 150, easing: houseEase() });
       }
       measured.current = { expanded, height: after };
     } else if (!running) measured.current = { expanded, height: element.getBoundingClientRect().height };

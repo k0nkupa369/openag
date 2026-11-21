@@ -41,7 +41,7 @@ function downgradeLabel(suppressedBy: string | null): string | null {
   return `downgraded: ${suppressedBy.replace("_", " ")}`;
 }
 
-export function SchedulePanel({ api }: { api: Api }) {
+export function SchedulePanel({ api, canManage = false }: { api: Api; canManage?: boolean }) {
   const [loaded, setLoaded] = useState<DaemonSettings | null>(null);
   const [bots, setBots] = useState<BotInfo[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -172,7 +172,7 @@ export function SchedulePanel({ api }: { api: Api }) {
   }
 
   function outcome(key: ScheduleKey, label: string) {
-    return <div className="flex flex-wrap items-center gap-3"><Button type="submit" disabled={saving !== null}>{saving === key ? "Saving…" : `Save ${label}`}</Button>{outcomes[key]?.saved && <span role="status">Saved.</span>}{outcomes[key]?.error && <p className="mt-1.5 text-[var(--warn)]" role="alert">{outcomes[key]?.error}</p>}</div>;
+    return <div className="flex flex-wrap items-center gap-3"><Button type="submit" disabled={saving !== null || !canManage}>{saving === key ? "Saving…" : `Save ${label}`}</Button>{outcomes[key]?.saved && <span role="status">Saved.</span>}{outcomes[key]?.error && <p className="mt-1.5 text-[var(--warn)]" role="alert">{outcomes[key]?.error}</p>}</div>;
   }
 
   if (loadError) {
@@ -186,29 +186,30 @@ export function SchedulePanel({ api }: { api: Api }) {
 
   return (
     <div className="grid gap-4 in-data-[slot=proactive-page]:flex in-data-[slot=proactive-page]:flex-col in-data-[slot=proactive-page]:gap-5">
+      {!canManage && <p className="m-0 text-sm text-muted-foreground">Needs an owner or full-access device.</p>}
       <ProactiveCard title="Checking frequency" description="Choose how often an agent checks for updates.">
       <form onSubmit={e => { e.preventDefault(); void save("heartbeat"); }} onChange={() => setOutcomes(o => ({ ...o, heartbeat: {} }))}>
-        <FieldSet disabled={saving !== null}><FieldLegend className="sr-only">Checking frequency</FieldLegend><FieldGroup className="sm:grid sm:grid-cols-2">
-          <Field className="sm:col-span-2" orientation="horizontal"><FieldLabel htmlFor="heartbeat-enabled">Enable scheduled checks</FieldLabel><Switch id="heartbeat-enabled" checked={enabled} onCheckedChange={v => { setEnabled(v); setOutcomes(o => ({ ...o, heartbeat: {} })); }} /></Field>
+        <FieldSet disabled={saving !== null || !canManage}><FieldLegend className="sr-only">Checking frequency</FieldLegend><FieldGroup className="sm:grid sm:grid-cols-2">
+          <Field className="sm:col-span-2" orientation="horizontal"><FieldLabel htmlFor="heartbeat-enabled">Enable scheduled checks</FieldLabel><Switch id="heartbeat-enabled" disabled={saving !== null || !canManage} checked={enabled} onCheckedChange={v => { setEnabled(v); setOutcomes(o => ({ ...o, heartbeat: {} })); }} /></Field>
           <Field><FieldLabel htmlFor="heartbeat-minutes">Check every (minutes)</FieldLabel><Input id="heartbeat-minutes" type="number" min={5} max={1440} value={everyMinutes} onChange={e => setEveryMinutes(e.target.value)} /></Field>
-          <Field><FieldLabel htmlFor="heartbeat-bot">Agent</FieldLabel><SelectField id="heartbeat-bot" className="w-full min-h-11 max-w-full" value={botId} onValueChange={(value) => setBotId(value)}><SelectItem value="">{defaultLabel(bots)}</SelectItem>{bots.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectField></Field>
+          <Field><FieldLabel htmlFor="heartbeat-bot">Agent</FieldLabel><SelectField id="heartbeat-bot" className="w-full min-h-11 max-w-full" disabled={saving !== null || !canManage} value={botId} onValueChange={(value) => setBotId(value)}><SelectItem value="">{defaultLabel(bots)}</SelectItem>{bots.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectField></Field>
           {outcome("heartbeat", "checking frequency")}
         </FieldGroup></FieldSet>
       </form>
       </ProactiveCard>
       <ProactiveCard title="Proactive alerts" description="Choose when agents may notify you and how repeated alerts are limited.">
       <form onSubmit={e => { e.preventDefault(); void save("activeHours"); }} onChange={() => setOutcomes(o => ({ ...o, activeHours: {} }))}>
-        <FieldSet disabled={saving !== null}><FieldLegend>Notification hours</FieldLegend><p className="text-muted-foreground">Applies to proactive alerts.</p><FieldGroup className="sm:grid sm:grid-cols-2">
+        <FieldSet disabled={saving !== null || !canManage}><FieldLegend>Notification hours</FieldLegend><p className="text-muted-foreground">Applies to proactive alerts.</p><FieldGroup className="sm:grid sm:grid-cols-2">
           <div className="grid gap-5 sm:col-span-2 sm:grid-cols-2"><Field><FieldLabel htmlFor="active-start">Notification hours start</FieldLabel><Input id="active-start" type="time" value={start} onChange={e => setStart(e.target.value)} /></Field><Field><FieldLabel htmlFor="active-end">Notification hours end</FieldLabel><Input id="active-end" type="time" value={end} onChange={e => setEnd(e.target.value)} /></Field></div>
           <FieldSet className="sm:col-span-2"><FieldLegend variant="label">Notification days</FieldLegend><ToggleGroup multiple variant="outline" spacing={0} className="flex-wrap" aria-label="Notification days" value={days.map(String)} onValueChange={values => setDays(values.map(Number).sort((a, b) => a - b))}>{DAYS.map((name, i) => <ToggleGroupItem key={name} value={String(i)}>{name}</ToggleGroupItem>)}</ToggleGroup></FieldSet>
           {outcome("activeHours", "notification hours")}
         </FieldGroup></FieldSet>
       </form>
       <form onSubmit={e => { e.preventDefault(); void save("wake"); }} onChange={() => setOutcomes(o => ({ ...o, wake: {} }))}>
-        <FieldSet disabled={saving !== null}><FieldLegend className="sr-only">Notification limits</FieldLegend><FieldGroup className="sm:grid sm:grid-cols-2">
+        <FieldSet disabled={saving !== null || !canManage}><FieldLegend className="sr-only">Notification limits</FieldLegend><FieldGroup className="sm:grid sm:grid-cols-2">
           <Field><FieldLabel htmlFor="wake-budget">Daily notification limit</FieldLabel><Input id="wake-budget" type="number" min={0} max={50} value={budget} onChange={e => setBudget(e.target.value)} /></Field>
           <Field><FieldLabel htmlFor="wake-dedupe">Suppress repeated alerts (hours)</FieldLabel><Input id="wake-dedupe" type="number" min={1} max={168} value={dedupeHours} onChange={e => setDedupeHours(e.target.value)} /></Field>
-          <Field><FieldLabel htmlFor="wake-urgency">Minimum urgency</FieldLabel><SelectField id="wake-urgency" className="w-full min-h-11 max-w-full" value={urgencyThreshold} onValueChange={(value) => setUrgencyThreshold(value as WakeSettings["urgencyThreshold"])}><SelectItem value="low">Low</SelectItem><SelectItem value="normal">Normal</SelectItem><SelectItem value="high">High</SelectItem></SelectField></Field>
+          <Field><FieldLabel htmlFor="wake-urgency">Minimum urgency</FieldLabel><SelectField id="wake-urgency" className="w-full min-h-11 max-w-full" disabled={saving !== null || !canManage} value={urgencyThreshold} onValueChange={(value) => setUrgencyThreshold(value as WakeSettings["urgencyThreshold"])}><SelectItem value="low">Low</SelectItem><SelectItem value="normal">Normal</SelectItem><SelectItem value="high">High</SelectItem></SelectField></Field>
           {outcome("wake", "notification limits")}
         </FieldGroup></FieldSet>
       </form>
@@ -238,8 +239,8 @@ export function SchedulePanel({ api }: { api: Api }) {
       </ProactiveCard>
       <ProactiveCard title="Morning brief" description="A summary of queued updates and pending approvals.">
       <form onSubmit={e => { e.preventDefault(); void save("brief"); }} onChange={() => setOutcomes(o => ({ ...o, brief: {} }))}>
-        <FieldSet disabled={saving !== null}><FieldLegend className="sr-only">Morning brief</FieldLegend><FieldGroup className="sm:grid sm:grid-cols-2">
-          <Field className="sm:col-span-2" orientation="horizontal"><FieldLabel htmlFor="brief-enabled">Enable morning brief</FieldLabel><Switch id="brief-enabled" checked={briefEnabled} onCheckedChange={v => { setBriefEnabled(v); setOutcomes(o => ({ ...o, brief: {} })); }} /></Field>
+        <FieldSet disabled={saving !== null || !canManage}><FieldLegend className="sr-only">Morning brief</FieldLegend><FieldGroup className="sm:grid sm:grid-cols-2">
+          <Field className="sm:col-span-2" orientation="horizontal"><FieldLabel htmlFor="brief-enabled">Enable morning brief</FieldLabel><Switch id="brief-enabled" disabled={saving !== null || !canManage} checked={briefEnabled} onCheckedChange={v => { setBriefEnabled(v); setOutcomes(o => ({ ...o, brief: {} })); }} /></Field>
           <Field><FieldLabel htmlFor="brief-time">Brief time</FieldLabel><Input id="brief-time" type="time" value={briefTime} onChange={e => setBriefTime(e.target.value)} /></Field>
           <FieldSet className="sm:col-span-2"><FieldLegend variant="label">Brief days</FieldLegend><ToggleGroup multiple variant="outline" spacing={0} className="flex-wrap" aria-label="Brief days" value={briefDays.map(String)} onValueChange={values => setBriefDays(values.map(Number).sort((a, b) => a - b))}>{DAYS.map((name, i) => <ToggleGroupItem key={name} value={String(i)}>{name}</ToggleGroupItem>)}</ToggleGroup></FieldSet>
           {outcome("brief", "morning brief")}

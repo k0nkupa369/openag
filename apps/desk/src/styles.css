@@ -6,6 +6,11 @@
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* The house curve: strong ease-out for desk UI motion. `ease-house` in classes, `var(--ease-house)` in CSS, houseEase() for WAAPI. */
+@theme static {
+  --ease-house: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: var(--sans);
@@ -397,7 +402,7 @@ nav[aria-label="Settings"] { scrollbar-width: none; }
   opacity: 1;
   transform: scale(1);
   transform-origin: left center;
-  transition: opacity 150ms cubic-bezier(0.23, 1, 0.32, 1), transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 150ms var(--ease-house), transform 150ms var(--ease-house);
 }
 @starting-style {
   .desk-attachment-entry { opacity: 0; transform: scale(.98); }
@@ -406,6 +411,6 @@ nav[aria-label="Settings"] { scrollbar-width: none; }
 /* The cue marks an available target, not an accepted upload. */
 .desk-file-drop-cue { opacity: 0; }
 @media (hover: hover) and (pointer: fine) {
-  .desk-file-drop-cue { transition: opacity 125ms cubic-bezier(0.23, 1, 0.32, 1); }
+  .desk-file-drop-cue { transition: opacity 125ms var(--ease-house); }
   .desk-file-drop-cue[data-file-drop-active="true"] { opacity: 1; }
 }

@@ -1,23 +1,30 @@
-import { automationProposalSchema, ProposalError, type AutomationProposalInput, type ManagementProposals } from "../management-proposals.js";
+import { automationProposal } from "../management-automation.js";
+import { deliveryRoomProposal, proactiveProposal } from "../management-settings.js";
+import { directChatProposal, roomProposal } from "../management-rooms.js";
+import { responsibilityProposal } from "../management-responsibilities.js";
+import { ProposalError, type ManagementProposals, type ProposalKind } from "../management-proposals.js";
 import type { ToolDef } from "./registry.js";
 
+/** Every kind of management proposal (OA-347). Their `tool` names are `PROPOSAL_TOOLS` in policy.ts. */
+export const PROPOSAL_KINDS: readonly ProposalKind<any>[] = [automationProposal, proactiveProposal, deliveryRoomProposal, roomProposal, directChatProposal, responsibilityProposal];
+
 /**
- * Proposes an automation change (OA-347). Like request_input it only stores something for the owner and grants nothing,
- * so it runs in every interactive mode without its own review. The runner offers it only to the default bot in an
- * interactive conversation; the owner applies it by accepting the card.
+ * One `propose_*` tool per kind. Like request_input they only store something for the owner and grant nothing, so they
+ * run in every interactive mode without their own review. The runner offers them only to the default bot in an
+ * interactive conversation; the owner applies a proposal by accepting the card.
  */
-export function createProposeAutomationTool(proposals: () => ManagementProposals | undefined): ToolDef<AutomationProposalInput> {
-  return {
-    name: "propose_automation", class: "read", offlineSafe: true,
+export function createProposalTools(proposals: () => ManagementProposals | undefined): ToolDef<any>[] {
+  return PROPOSAL_KINDS.map(kind => ({
+    name: kind.tool, class: "read", offlineSafe: true,
     permission: () => ({ approval: "allow" }), effectScope: () => ({ kind: "read" }),
     enabled: () => proposals() !== undefined,
-    description: "Propose a scheduled automation change for the owner to accept: create (name, scheduleCron as 5-field cron, roomId, prompt; optional tz, botId, allowApprovals), update (automationId plus the fields to change), enable, disable or delete (automationId only). Only cron automations that post to a conversation. Nothing changes until the owner or a full-access device accepts the card shown in this conversation; it expires after 24 hours. Never say the change is done. Webhook, GitHub, Slack and polling triggers, devices, permissions, connectors, MCP servers and secrets cannot be proposed.",
-    input: automationProposalSchema,
+    description: kind.description,
+    input: kind.input,
     async execute(ctx, args) {
       const service = proposals();
       if (!service) throw Error("Proposals are unavailable.");
-      try { return service.proposeAutomation({ botId: ctx.botId, roomId: ctx.roomId }, args); }
+      try { return service.propose(kind.tool, { botId: ctx.botId, roomId: ctx.roomId }, args); }
       catch (err) { if (err instanceof ProposalError) throw Error(err.message); throw err; }
     },
-  };
+  } satisfies ToolDef<any>));
 }

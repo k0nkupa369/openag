@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Search, RefreshCw, Plug, LoaderCircle, ChevronRight, ChevronLeft } from 'lucide-react';
 import { messageOf, type Api } from '../api';
-import type { ProactiveRun, ProactiveService, ProactiveStatus } from '../types';
+import type { ProactiveDailyUsage, ProactiveRun, ProactiveService, ProactiveStatus } from '../types';
 import { useUnsavedChanges } from '../unsaved-changes';
 import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
@@ -19,6 +19,8 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { ProactiveCard } from './ProactiveCard';
 
 const time = (value: number | null) => value ? new Date(value).toLocaleString() : 'Not yet';
+const day = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+const tokens = (usage: ProactiveDailyUsage) => !usage.tokens ? 'Not reported' : `${usage.tokens.input.toLocaleString()} in · ${usage.tokens.output.toLocaleString()} out${usage.tokens.reportedCalls < usage.calls ? ` · ${usage.tokens.reportedCalls} of ${usage.calls} calls` : ''}`;
 const serviceNames: Record<string, string> = {outlook: 'Outlook', gmail: 'Gmail', github: 'GitHub', _composio: 'Composio', composio: 'Composio'};
 const serviceName = (id: string) => Object.hasOwn(serviceNames, id) ? serviceNames[id] : id.replaceAll('_', ' ').replace(/^./, letter => letter.toUpperCase());
 const names: Record<string, string> = { checked: 'Checked', no_new_items: 'No new items', quiet: 'No alert needed', incomplete: 'Incomplete', unavailable: 'Could not check', unsupported: 'No supported check', needs_sign_in: 'Needs sign-in', not_checked: 'Not checked', not_started: 'Not checked', permission_missing: 'Read access missing', rate_limited: 'Rate limited', running: 'Checking', interrupted: 'Interrupted', cancelled: 'Cancelled', ping: 'Alert posted', digest: 'Held for brief', suppressed: 'Held back' };
@@ -123,6 +125,16 @@ export function ProactiveHistory({ api, canManage = false }: { api: Api; canMana
         </Item>)}</ItemGroup></section>)}</div>
       </>}
     </ProactiveCard>
+    {status && <ProactiveCard title="Model use" description="Model calls made by proactive checks in the last 14 days.">
+      {!status.usage?.length ? <Empty><EmptyHeader><EmptyTitle>No model calls</EmptyTitle><EmptyDescription>Calls appear here after a check assesses new items.</EmptyDescription></EmptyHeader></Empty> : <Table aria-label="Model use by day">
+        <TableHeader><TableRow><TableHead>Day</TableHead><TableHead className="text-right">Calls</TableHead><TableHead className="text-right">Tokens</TableHead></TableRow></TableHeader>
+        <TableBody>{status.usage.map(usage => <TableRow key={usage.date}>
+          <TableCell className="whitespace-normal"><div className="flex min-w-0 flex-col gap-1 py-1"><span>{day(usage.date)}</span>{!!usage.models.length && <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{usage.models.join(', ')}</span>}</div></TableCell>
+          <TableCell className="text-right tabular-nums">{usage.calls}</TableCell>
+          <TableCell className="whitespace-normal text-right tabular-nums text-muted-foreground">{tokens(usage)}</TableCell>
+        </TableRow>)}</TableBody>
+      </Table>}
+    </ProactiveCard>}
     {status && <ProactiveCard title="Recent checks" description="Recorded outcomes across your selected accounts." footer={runs.length > 10 ? <><p className="m-0 text-sm text-muted-foreground" role="status">{page * 10 + 1}–{Math.min(page * 10 + 10, runs.length)} of {runs.length} checks</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(value => value - 1)}><ChevronLeft data-icon="inline-start" />Newer</Button><Button variant="outline" size="sm" disabled={(page + 1) * 10 >= runs.length} onClick={() => setPage(value => value + 1)}>Older<ChevronRight data-icon="inline-end" /></Button></div></> : undefined}>
       {!runs.length ? <Empty><EmptyHeader><EmptyTitle>No recent checks</EmptyTitle><EmptyDescription>Recorded checks will appear here after the first run.</EmptyDescription></EmptyHeader></Empty> : <Table>
         <TableHeader><TableRow><TableHead>Account</TableHead><TableHead className="hidden sm:table-cell">Result</TableHead><TableHead><span className="sr-only">Details</span></TableHead></TableRow></TableHeader>

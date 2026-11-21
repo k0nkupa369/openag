@@ -803,7 +803,8 @@ export interface ConversationRequest {kind:"question"|"provider";id:string;at:nu
 export interface ProactiveService { id: string; check: string | null; connected?: boolean }
 export interface ProactiveAccount { service: string; accountId: string; alias: string; lastAttemptAt: number | null; lastSuccessAt: number | null; coveredUntil: number | null; status: string; reason: string | null }
 export interface ProactiveRun { id: number; service: string; accountId: string | null; startedAt: number; endedAt: number | null; status: string; reason: string | null; items: number; decisionId: number | null; fromAt: number | null; untilAt: number | null; evidence: Array<{id:string;version:string;text:string;reference:string}> }
-export interface ProactiveStatus { revision: number; enabled: boolean; nextCheckAt: number; checking: boolean; services: ProactiveService[]; accounts: ProactiveAccount[]; runs: ProactiveRun[] }
+export interface ProactiveDailyUsage { date: string; calls: number; models: string[]; tokens: { input: number; output: number; reportedCalls: number } | null }
+export interface ProactiveStatus { revision: number; enabled: boolean; nextCheckAt: number; checking: boolean; services: ProactiveService[]; accounts: ProactiveAccount[]; runs: ProactiveRun[]; usage?: ProactiveDailyUsage[] }
 
 /** Current state is not inferred from the displayed history window. */
 export interface ConversationState {

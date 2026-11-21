@@ -41,7 +41,7 @@ const flush = () =>
 
 describe("ReflectionPanel", () => {
   it("loads the setting and shows the recent runs", async () => {
-    render(<ReflectionPanel api={makeApi()} />);
+    render(<ReflectionPanel canManage api={makeApi()} />);
     await flush();
     expect((screen.getByRole("switch", { name: /Enable nightly reflection/ })).getAttribute("aria-checked")).toBe("false");
     expect((screen.getByLabelText(/Time \(HH:MM\)/) as HTMLInputElement).value).toBe("02:30");
@@ -51,14 +51,14 @@ describe("ReflectionPanel", () => {
   });
 
   it("shows the explanation and an empty state when there are no runs", async () => {
-    render(<ReflectionPanel api={makeApi({}, { runs: [] })} />);
+    render(<ReflectionPanel canManage api={makeApi({}, { runs: [] })} />);
     await flush();
     expect(screen.getByText("No runs yet")).toBeTruthy();
   });
 
   it("Save sends the full setting object with the edited time", async () => {
     const api = makeApi();
-    render(<ReflectionPanel api={api} />);
+    render(<ReflectionPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("switch", { name: /Enable nightly reflection/ }));
     fireEvent.change(screen.getByLabelText(/Time \(HH:MM\)/), { target: { value: "23:15" } });
@@ -70,7 +70,7 @@ describe("ReflectionPanel", () => {
 
   it("blocks an invalid time client-side and does not save", async () => {
     const api = makeApi();
-    render(<ReflectionPanel api={api} />);
+    render(<ReflectionPanel canManage api={api} />);
     await flush();
     fireEvent.change(screen.getByLabelText(/Time \(HH:MM\)/), { target: { value: "25:00" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -81,7 +81,7 @@ describe("ReflectionPanel", () => {
 
   it("Run now calls runReflection", async () => {
     const api = makeApi();
-    render(<ReflectionPanel api={api} />);
+    render(<ReflectionPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Run now" }));
     await flush();
@@ -95,7 +95,7 @@ describe("ReflectionPanel", () => {
         throw new ApiError("a reflection run is already in progress", 409);
       }),
     });
-    render(<ReflectionPanel api={api} />);
+    render(<ReflectionPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Run now" }));
     await flush();
@@ -103,9 +103,25 @@ describe("ReflectionPanel", () => {
   });
 
   it("disables Run now while a run is in progress", async () => {
-    render(<ReflectionPanel api={makeApi({}, { running: true })} />);
+    render(<ReflectionPanel canManage api={makeApi({}, { running: true })} />);
     await flush();
     expect((screen.getByRole("button", { name: "Run now" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("A run is in progress.")).toBeTruthy();
   });
 });
+
+const isDisabled = (el: Element) => el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true" || el.hasAttribute("data-disabled");
+
+describe("limited device", () => {
+  it("shows reflection read-only and cannot save or run", async () => {
+    const api = makeApi();
+    render(<ReflectionPanel api={api} />);
+    const save = await screen.findByRole("button", { name: "Save" });
+    expect(isDisabled(save)).toBe(true);
+    expect(isDisabled(screen.getByRole("button", { name: "Run now" }))).toBe(true);
+    expect(isDisabled(screen.getByRole("switch", { name: "Enable nightly reflection" }))).toBe(true);
+    fireEvent.click(save);
+    expect(api.putSetting).not.toHaveBeenCalled();
+  });
+});
+

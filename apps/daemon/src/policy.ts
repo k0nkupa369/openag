@@ -4,6 +4,10 @@ export const TOOL_CLASSES = ["read", "search", "browse", "act-local", "act-exter
 export type ToolClass = (typeof TOOL_CLASSES)[number];
 export type Mode = "auto" | "ask" | "deny";
 
+/** OA-347 proposal tools (tools/management.ts PROPOSAL_KINDS). They store a proposal for the owner and grant nothing. */
+export const PROPOSAL_TOOLS = ["propose_automation", "propose_proactive", "propose_delivery_room", "propose_room", "propose_direct_chat", "propose_responsibility"] as const;
+export const isProposalTool = (name: string) => (PROPOSAL_TOOLS as readonly string[]).includes(name);
+
 export interface TurnRestrictions {
   readonly unattended?: boolean;
   readonly allowApprovals?: boolean;
@@ -40,8 +44,8 @@ const TOOL_NAME_CLASSES: Record<string, ToolClass> = {
   agent_model_set: "act-local",
   agent_skills_assign: "act-local",
   request_input: "read",
-  // Stores a proposal for the owner; the runner offers it only to the default bot in interactive conversations.
-  propose_automation: "read",
+  // Proposal tools store a proposal for the owner; the runner offers them only to the default bot in interactive conversations.
+  ...Object.fromEntries(PROPOSAL_TOOLS.map(name => [name, "read"])),
   investigation_read: "read",
   create_work: "act-local",
   avatar_preview: "read",

@@ -68,7 +68,7 @@ Other remaining gates:
 Not yet built.
 
 **Memory, models and routing**
-- OA-347 Default bot management tools ([default-bot-management-design.md](docs/notes/default-bot-management-design.md)). Slice 1, automation proposals, is built, with real Claude/Codex journeys and a rendered desktop/phone/Limited card check recorded in the design note. Remaining slices: heartbeat/brief/reflection switches, delivery room, rooms, direct chats, responsibilities.
+- OA-347 Default bot management tools ([default-bot-management-design.md](docs/notes/default-bot-management-design.md)). Every v1 proposal kind is built: automations (with real Claude/Codex journeys), and in 0.7.5 the shared base, heartbeat/brief/reflection, delivery room, rooms (including removing a member), direct chats and responsibilities, with controlled tests and rendered card checks. Remaining gate: one real Claude and one real Codex journey covering the new kinds. Responsibility proposals are refused until a mail source adapter exists (OA-368 is synthetic only).
 
 **Channels and remote access**
 - WebRTC access cap (decision first): a device set to Full access is treated as the owner over WebRTC, while the WebRTC design keeps owner-only routes on LAN/Tailscale. Decide whether WebRTC peers are capped at Limited access ([webrtc.md](docs/notes/webrtc.md), Known limits).
@@ -84,6 +84,7 @@ Ideas kept out of scope on purpose:
 - Public App marketplace and code signing.
 - Replacing the ACP CLIs with a custom agent loop.
 - Making Composio a required dependency.
+- Split `docs/help/proactive.md`: it is within a few bytes of the 12 KB `HELP_TOPIC_MAX`, so the next proactive help change will fail the build.
 - Proactive pings that bypass the wake filter.
 - A second SQLite database or a client-side database. The daemon owns the only one.
 

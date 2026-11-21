@@ -39,7 +39,7 @@ const flush = () => act(async () => {
 
 describe("NotificationsPanel", () => {
   it("shows the public-service notice and defaults to off with no details", async () => {
-    render(<NotificationsPanel api={makeApi()} />);
+    render(<NotificationsPanel canManage api={makeApi()} />);
     await flush();
     expect(screen.getByText(/ntfy.sh is a public service/)).toBeTruthy();
     expect((screen.getByRole("switch", { name: /Enable push notifications/ })).getAttribute("aria-checked")).toBe("false");
@@ -49,7 +49,7 @@ describe("NotificationsPanel", () => {
 
   it("saves the form to PUT /settings/push with the stored topic", async () => {
     const api = makeApi({ enabled: false, server: "https://ntfy.sh", topic: TOPIC, publicUrl: null, includeDetail: false, maxPerHour: 20 });
-    render(<NotificationsPanel api={api} />);
+    render(<NotificationsPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("switch", { name: /Enable push notifications/ }));
     fireEvent.change(screen.getByLabelText(/Public URL/), { target: { value: "https://mini.tailnet.ts.net" } });
@@ -69,7 +69,7 @@ describe("NotificationsPanel", () => {
 
   it("generating a topic shows it once and offers a copy button", async () => {
     const api = makeApi();
-    render(<NotificationsPanel api={api} />);
+    render(<NotificationsPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Generate topic" }));
     await flush();
@@ -81,7 +81,7 @@ describe("NotificationsPanel", () => {
 
   it("regenerating is two-step: confirm, then replace", async () => {
     const api = makeApi({ enabled: true, server: "https://ntfy.sh", topic: TOPIC, publicUrl: null, includeDetail: false, maxPerHour: 20 });
-    render(<NotificationsPanel api={api} />);
+    render(<NotificationsPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Generate a new topic" }));
     expect(api.generatePushTopic).not.toHaveBeenCalled();
@@ -97,7 +97,7 @@ describe("NotificationsPanel", () => {
 
   it("send test shows the result", async () => {
     const api = makeApi({ enabled: true, server: "https://ntfy.sh", topic: TOPIC, publicUrl: null, includeDetail: false, maxPerHour: 20 });
-    render(<NotificationsPanel api={api} />);
+    render(<NotificationsPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Send test" }));
     await flush();
@@ -107,7 +107,7 @@ describe("NotificationsPanel", () => {
 
   it("send test shows a failure reason", async () => {
     const api = makeApi(null, { sendPushTest: vi.fn(async () => ({ ok: false, reason: "HTTP 500" })) });
-    render(<NotificationsPanel api={api} />);
+    render(<NotificationsPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Send test" }));
     await flush();
@@ -120,7 +120,7 @@ describe("NotificationsPanel", () => {
         throw new ApiError("push is not enabled or has no topic", 409);
       }),
     });
-    render(<NotificationsPanel api={api} />);
+    render(<NotificationsPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Send test" }));
     await flush();
@@ -128,8 +128,25 @@ describe("NotificationsPanel", () => {
   });
 
   it("shows the status line from GET /push/status", async () => {
-    render(<NotificationsPanel api={makeApi()} />);
+    render(<NotificationsPanel canManage api={makeApi()} />);
     await flush();
     expect(screen.getByText(/Sent this hour: 2\. Dropped: 1\. Last error: none\./)).toBeTruthy();
   });
 });
+
+const isDisabled = (el: Element) => el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true" || el.hasAttribute("data-disabled");
+
+describe("limited device", () => {
+  it("shows ntfy settings read-only, never the topic, and cannot save, test or generate", async () => {
+    const api = makeApi({ enabled: true, server: "https://ntfy.sh", topic: "(set)", includeDetail: false, publicUrl: null, maxPerHour: 20 });
+    render(<NotificationsPanel api={api} />);
+    expect(await screen.findByText("Needs an owner or full-access device.")).toBeTruthy();
+    expect(screen.getByText("Set")).toBeTruthy();
+    expect(screen.queryByText("(set)")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
+    for (const name of ["Save notifications", "Send test"]) expect({ name, disabled: isDisabled(screen.getByRole("button", { name })) }).toEqual({ name, disabled: true });
+    fireEvent.click(screen.getByRole("button", { name: "Save notifications" }));
+    expect(api.putSetting).not.toHaveBeenCalled();
+  });
+});
+

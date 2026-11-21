@@ -7,7 +7,7 @@ import { addMember, createRoom, getBot, getRoom, listRooms, type Room, type Room
 import { getDefaultRedactor } from "./redact.js";
 
 export class RoomCreationError extends Error {
-  constructor(message: string, readonly status: 400 | 409 = 400) { super(message); }
+  constructor(message: string, readonly status: 400 | 404 | 409 = 400) { super(message); }
 }
 
 const requestIdSchema = z.string().uuid();
@@ -40,12 +40,10 @@ export function ensureDirectChat(db: Db, ledger: Ledger, botId: string): Room | 
     .immediate();
 }
 
-/**
- * Creation and direct-chat reuse are decided together by the daemon, including concurrent requests. `kind` is explicit:
- * a `direct` chat has exactly one member and reuses that bot's existing direct chat; a `room` is always created (a named
- * one-bot room is a room, never mistaken for a direct chat).
- */
-export function createDeskRoom(db: Db, ledger: Ledger, body: unknown) {
+export interface DeskRoomInput { id: string; name: string; members: string[]; kind: RoomKind; lead: string; requestId?: string }
+
+/** Validates a desk room creation body without writing. Throws RoomCreationError. */
+export function validateDeskRoom(db: Db, body: unknown): DeskRoomInput {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new RoomCreationError("body must be an object");
   const input = body as Record<string, unknown>;
   if (Object.keys(input).some((key) => !["id", "name", "members", "kind", "lead", "requestId"].includes(key))) throw new RoomCreationError("unknown room field");
@@ -60,10 +58,18 @@ export function createDeskRoom(db: Db, ledger: Ledger, body: unknown) {
   const lead = input.lead === undefined ? members[0] : input.lead;
   if (typeof lead !== "string" || !members.includes(lead)) throw new RoomCreationError("the lead must be a member of the room");
   if (input.requestId !== undefined && (!requestIdSchema.safeParse(input.requestId).success || kind !== "room")) throw new RoomCreationError("a creation request id must be a UUID for a named room");
-  const requestId = input.requestId as string | undefined;
-  const id = input.id;
-  const hash = createHash("sha256").update(canonical({ id, name: input.name.trim(), members: [...members].sort(), kind, lead })).digest("hex");
-  const name = getDefaultRedactor().redactString(input.name.trim());
+  return { id: input.id, name: input.name.trim(), members: members as string[], kind, lead, ...(input.requestId === undefined ? {} : { requestId: input.requestId as string }) };
+}
+
+/**
+ * Creation and direct-chat reuse are decided together by the daemon, including concurrent requests. `kind` is explicit:
+ * a `direct` chat has exactly one member and reuses that bot's existing direct chat; a `room` is always created (a named
+ * one-bot room is a room, never mistaken for a direct chat).
+ */
+export function createDeskRoom(db: Db, ledger: Ledger, body: unknown, audit: Record<string, unknown> = {}) {
+  const { id, members, kind, lead, requestId, ...input } = validateDeskRoom(db, body);
+  const hash = createHash("sha256").update(canonical({ id, name: input.name, members: [...members].sort(), kind, lead })).digest("hex");
+  const name = getDefaultRedactor().redactString(input.name);
   return ledger.atomic(() => {
     if (requestId) {
       const receipt = db.prepare("SELECT room_id, payload_hash FROM room_creations WHERE request_id = ?").get(requestId) as { room_id: string; payload_hash: string } | undefined;
@@ -80,7 +86,66 @@ export function createDeskRoom(db: Db, ledger: Ledger, body: unknown) {
     createRoom(db, { id, name, leadBotId: lead, kind });
     for (const bot of members) addMember(db, id, bot);
     if (requestId) db.prepare("INSERT INTO room_creations (request_id, room_id, payload_hash) VALUES (?, ?, ?)").run(requestId, id, hash);
-    ledger.append("_system", "owner", "config", { kind: "room_created", roomId: id, members, lead, roomKind: kind });
+    ledger.append("_system", "owner", "config", { kind: "room_created", roomId: id, members, lead, roomKind: kind, ...audit });
     return { room: getRoom(db, id)!, created: true };
+  });
+}
+
+export const roomUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(80).refine(v => !/[\u0000-\u001f\u007f]/.test(v), "no control characters").optional(),
+  description: z.string().trim().max(500).refine(v => !/[\u0000-\u0008\u000b-\u001f\u007f]/.test(v), "no control characters").optional(),
+  leadBotId: z.string().min(1).max(64).optional(),
+  addMembers: z.array(z.string().min(1).max(64)).min(1).max(50).refine(ids => new Set(ids).size === ids.length, "duplicate member").optional(),
+  removeMembers: z.array(z.string().min(1).max(64)).min(1).max(50).refine(ids => new Set(ids).size === ids.length, "duplicate member").optional(),
+}).strict();
+export type RoomUpdate = z.infer<typeof roomUpdateSchema>;
+
+export interface RoomUpdatePlan { room: Room; next: { name: string; description: string; leadBotId: string | null; members: string[] }; added: string[]; removed: string[] }
+
+/**
+ * Checks a room edit against the current room without writing. Direct chats keep exactly one agent; a named room keeps
+ * at least one member and its lead must stay a member (remove the lead only together with choosing a new one).
+ */
+export function planRoomUpdate(db: Db, roomId: string, patch: RoomUpdate): RoomUpdatePlan {
+  if (Object.keys(patch).length === 0) throw new RoomCreationError("name (1–80 chars), description (up to 500), leadBotId, addMembers or removeMembers required");
+  const room = getRoom(db, roomId);
+  if (!room || room.id.startsWith("_")) throw new RoomCreationError("room not found", 404);
+  const { name, description, leadBotId, addMembers = [], removeMembers = [] } = patch;
+  if ((addMembers.length || removeMembers.length) && room.kind === "direct") throw new RoomCreationError("agents can only be added to or removed from named rooms");
+  if (addMembers.some(id => !getBot(db, id))) throw new RoomCreationError("members must be known agent ids");
+  if (addMembers.some(id => removeMembers.includes(id))) throw new RoomCreationError("an agent cannot be added and removed together");
+  if (removeMembers.some(id => !room.members.includes(id))) throw new RoomCreationError("only current members can be removed");
+  const added = addMembers.filter(id => !room.members.includes(id));
+  const members = [...room.members.filter(id => !removeMembers.includes(id)), ...added];
+  if (members.length > 50) throw new RoomCreationError("a room can have at most 50 agents");
+  if (members.length === 0) throw new RoomCreationError("a room must keep at least one agent");
+  const lead = leadBotId ?? room.leadBotId;
+  if (lead === null || !members.includes(lead)) throw new RoomCreationError(leadBotId === undefined && room.leadBotId !== null && removeMembers.includes(room.leadBotId) ? "choose a new lead before removing the current one" : "the lead must be a member of the room");
+  const redact = getDefaultRedactor();
+  return {
+    room, added, removed: removeMembers,
+    next: { name: name === undefined ? room.name : redact.redactString(name), description: description === undefined ? room.description ?? "" : redact.redactString(description), leadBotId: lead, members },
+  };
+}
+
+/** Applies a room edit (owner route and accepted proposals). Throws RoomCreationError. */
+export function updateDeskRoom(db: Db, ledger: Ledger, roomId: string, patch: RoomUpdate, audit: Record<string, unknown> = {}): Room {
+  return ledger.atomic(() => {
+    const { room, next, added, removed } = planRoomUpdate(db, roomId, patch);
+    for (const id of added) addMember(db, room.id, id);
+    for (const id of removed) db.prepare("DELETE FROM room_members WHERE room_id = ? AND bot_id = ?").run(room.id, id);
+    db.prepare("UPDATE rooms SET name = ?, description = ?, lead_bot_id = ? WHERE id = ?").run(next.name, next.description, next.leadBotId, room.id);
+    ledger.append("_system", "owner", "config", {
+      action: "room_updated",
+      roomId: room.id,
+      changed: [...(next.name !== room.name ? ["name"] : []), ...(next.description !== (room.description ?? "") ? ["description"] : []), ...(next.leadBotId !== room.leadBotId ? ["lead"] : []), ...(added.length || removed.length ? ["members"] : [])],
+      ...(added.length ? { addedMembers: added } : {}),
+      ...(removed.length ? { removedMembers: removed } : {}),
+      ...(next.leadBotId !== room.leadBotId ? { lead: { from: room.leadBotId, to: next.leadBotId } } : {}),
+      ...audit,
+    });
+    // Visible in the room's own history so members can see who answers unmentioned messages now.
+    if (next.leadBotId !== room.leadBotId) ledger.append(room.id, "owner", "config", { action: "room_lead_changed", from: room.leadBotId, to: next.leadBotId });
+    return getRoom(db, room.id)!;
   });
 }

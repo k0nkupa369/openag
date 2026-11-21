@@ -49,7 +49,7 @@ function backupStatusLine(status: BackupStatus): string {
   return `Last backup ${when}: failed${status.last.error ? ` (${status.last.error})` : ""}.`;
 }
 
-export function OpsPanel({ api, onBackupsChange }: { api: Api; onBackupsChange?: (status: BackupStatus) => void }) {
+export function OpsPanel({ api, onBackupsChange, canManage = false }: { api: Api; canManage?: boolean; onBackupsChange?: (status: BackupStatus) => void }) {
   const [backups, setBackups] = useState<BackupStatus | null>(null);
   const [ops, setOps] = useState<OpsStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -178,21 +178,22 @@ export function OpsPanel({ api, onBackupsChange }: { api: Api; onBackupsChange?:
   if (backups === null || ops === null) return <Skeleton className="h-48 w-full" aria-label="Loading operations" />;
 
   return <div className="flex min-w-0 flex-col gap-6">
+    {!canManage && <p className="m-0 text-sm text-muted-foreground">Needs an owner or full-access device.</p>}
     <SettingsSection icon="server" title="Backups" description="A verified copy of your database, kept on this server.">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1"><Badge variant={backups.enabled ? "secondary" : "outline"}>{backups.enabled ? "Scheduled" : "Off"}</Badge><p className="m-0 text-sm text-muted-foreground">{backupStatusLine(backups)}</p></div>
-        <Button variant="outline" type="button" onClick={runNow} disabled={running}>{running ? "Backing up…" : "Back up now"}</Button>
+        <Button variant="outline" type="button" onClick={runNow} disabled={running || !canManage}>{running ? "Backing up…" : "Back up now"}</Button>
       </div>
       {runNotice && <p role="status" className="m-0 text-sm">{runNotice}</p>}
       {runError && <Alert variant="destructive"><AlertDescription>{runError}</AlertDescription></Alert>}
       <Separator />
       <form noValidate onSubmit={saveBackup}><FieldGroup>
-        <Field orientation="horizontal"><FieldContent><FieldLabel htmlFor="backup-enabled">Scheduled backups</FieldLabel><FieldDescription>Run once a day at the configured server time.</FieldDescription></FieldContent><Switch id="backup-enabled" checked={backupForm.enabled} disabled={backupSaving} onCheckedChange={enabled => { setBackupForm({ ...backupForm, enabled }); setBackupSaved(false); }} /></Field>
+        <Field orientation="horizontal"><FieldContent><FieldLabel htmlFor="backup-enabled">Scheduled backups</FieldLabel><FieldDescription>Run once a day at the configured server time.</FieldDescription></FieldContent><Switch id="backup-enabled" checked={backupForm.enabled} disabled={backupSaving || !canManage} onCheckedChange={enabled => { setBackupForm({ ...backupForm, enabled }); setBackupSaved(false); }} /></Field>
         <div className="grid gap-5 sm:grid-cols-2">
-          <Field data-invalid={!!backupSaveError}><FieldLabel htmlFor="backup-time">Daily time (server local)</FieldLabel><Input id="backup-time" type="time" value={backupForm.time} disabled={backupSaving} aria-invalid={!!backupSaveError} onChange={e => { setBackupForm({ ...backupForm, time: e.target.value }); setBackupSaved(false); }} /></Field>
-          <Field data-invalid={!!backupSaveError}><FieldLabel htmlFor="backup-keep">Copies to keep</FieldLabel><Input id="backup-keep" type="number" min={1} max={60} value={keepText} disabled={backupSaving} aria-invalid={!!backupSaveError} onChange={e => { setKeepText(e.target.value); setBackupSaved(false); }} /><FieldDescription>Keep between 1 and 60 backups.</FieldDescription></Field>
+          <Field data-invalid={!!backupSaveError}><FieldLabel htmlFor="backup-time">Daily time (server local)</FieldLabel><Input id="backup-time" type="time" value={backupForm.time} disabled={backupSaving || !canManage} aria-invalid={!!backupSaveError} onChange={e => { setBackupForm({ ...backupForm, time: e.target.value }); setBackupSaved(false); }} /></Field>
+          <Field data-invalid={!!backupSaveError}><FieldLabel htmlFor="backup-keep">Copies to keep</FieldLabel><Input id="backup-keep" type="number" min={1} max={60} value={keepText} disabled={backupSaving || !canManage} aria-invalid={!!backupSaveError} onChange={e => { setKeepText(e.target.value); setBackupSaved(false); }} /><FieldDescription>Keep between 1 and 60 backups.</FieldDescription></Field>
         </div>
-        <div className="flex flex-wrap items-center gap-3"><Button type="submit" disabled={backupSaving}>{backupSaving ? "Saving…" : "Save backup settings"}</Button>{backupSaved && <span role="status">Saved.</span>}</div>
+        <div className="flex flex-wrap items-center gap-3"><Button type="submit" disabled={backupSaving || !canManage}>{backupSaving ? "Saving…" : "Save backup settings"}</Button>{backupSaved && <span role="status">Saved.</span>}</div>
         {backupSaveError && <Alert variant="destructive"><AlertDescription>{backupSaveError}</AlertDescription></Alert>}
       </FieldGroup></form>
       <Collapsible><CollapsibleTrigger render={<Button variant="ghost" />}><ChevronDown data-icon="inline-start" />Backup files<Badge variant="secondary">{backups.backups.length}</Badge></CollapsibleTrigger><CollapsibleContent>
@@ -204,10 +205,10 @@ export function OpsPanel({ api, onBackupsChange }: { api: Api; onBackupsChange?:
     <SettingsSection icon="bolt" title="Turn limits" description="Limit model turns per day. These limits do not measure spending.">
       <form noValidate onSubmit={saveLimits}><FieldGroup>
         <div className="grid gap-5 sm:grid-cols-2">
-          <Field data-invalid={!!limitsError}><FieldLabel htmlFor="limit-bot">Turns per bot</FieldLabel><Input id="limit-bot" type="number" min={0} max={MAX_LIMIT} value={limitTurns} aria-invalid={!!limitsError} disabled={limitsSaving} onChange={e => { setLimitTurns(e.target.value); setLimitsSaved(false); }} /><FieldDescription>0 means no limit.</FieldDescription></Field>
-          <Field data-invalid={!!limitsError}><FieldLabel htmlFor="limit-unattended">Unattended turns</FieldLabel><Input id="limit-unattended" type="number" min={0} max={MAX_LIMIT} value={limitUnattended} aria-invalid={!!limitsError} disabled={limitsSaving} onChange={e => { setLimitUnattended(e.target.value); setLimitsSaved(false); }} /><FieldDescription>Total unattended turns per day. 0 means no limit.</FieldDescription></Field>
+          <Field data-invalid={!!limitsError}><FieldLabel htmlFor="limit-bot">Turns per bot</FieldLabel><Input id="limit-bot" type="number" min={0} max={MAX_LIMIT} value={limitTurns} aria-invalid={!!limitsError} disabled={limitsSaving || !canManage} onChange={e => { setLimitTurns(e.target.value); setLimitsSaved(false); }} /><FieldDescription>0 means no limit.</FieldDescription></Field>
+          <Field data-invalid={!!limitsError}><FieldLabel htmlFor="limit-unattended">Unattended turns</FieldLabel><Input id="limit-unattended" type="number" min={0} max={MAX_LIMIT} value={limitUnattended} aria-invalid={!!limitsError} disabled={limitsSaving || !canManage} onChange={e => { setLimitUnattended(e.target.value); setLimitsSaved(false); }} /><FieldDescription>Total unattended turns per day. 0 means no limit.</FieldDescription></Field>
         </div>
-        <div className="flex flex-wrap items-center gap-3"><Button type="submit" disabled={limitsSaving}>{limitsSaving ? "Saving…" : "Save limits"}</Button>{limitsSaved && <span role="status">Saved.</span>}</div>
+        <div className="flex flex-wrap items-center gap-3"><Button type="submit" disabled={limitsSaving || !canManage}>{limitsSaving ? "Saving…" : "Save limits"}</Button>{limitsSaved && <span role="status">Saved.</span>}</div>
         {limitsError && <Alert variant="destructive"><AlertDescription>{limitsError}</AlertDescription></Alert>}
       </FieldGroup></form>
     </SettingsSection>

@@ -33,3 +33,10 @@ Component contracts checked through the installed shadcn CLI and official [Dialo
 ## Verification
 
 Build, standalone Devices/owner-access/knowledge acceptance, desktop and 320/390px real-browser checks using temporary data, independent Standards/Spec and built-in Codex review passed. See [verification and screenshots](devices/verification.md). No unit/Jest/Vitest suite or deployment.
+
+## Settings authority (0.7.5)
+
+Every `PUT /settings/:key` requires the owner or a Full device; a Limited device gets 403 for every key. Before 0.7.5 only ten keys were owner-only, and a Limited device could change `heartbeat`, `brief`, `reflection`, `activeHours`, `wake`, `backup`, `limits` and the ntfy part of `push`. That let it schedule unattended turns, turn backups off, or point alerts at its own ntfy server and topic, which kept working after the device was revoked. `POST /push/topic` and `POST /push/test` are owner/Full only too. `GET /settings` stays readable by any device but shows the ntfy `push.topic` as `(set)` to Limited devices, like `rtc.topic`. Web Push subscriptions remain per device, so a Limited device can still subscribe itself. The desk shows these controls read-only on Limited devices with "Needs an owner or full-access device." (Schedule, Reflection, Notifications, Server operations).
+
+Verification: `gateway.access.test.ts` "settings writes" (every key in `KNOWN_SETTINGS`: Limited 403, Full not 403), `gateway.push.test.ts` "limited devices" (masked topic, refused topic generation, test and redirect), the Limited tests in `SchedulePanel`, `ReflectionPanel`, `OpsPanel` and `NotificationsPanel` tests, and the `settings-owner-gate` scenario in `scripts/verify-rendered-acceptance.mjs`.
+

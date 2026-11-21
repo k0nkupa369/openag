@@ -132,7 +132,26 @@ export function reflectionView(toolName: string, payload: unknown): ReactNode | 
       </section>
     );
   }
+  // Other management proposals (OA-347) carry their before → after rows, labelled by the daemon.
+  if (toolName.startsWith("management_") && isRecord(payload.display) && Array.isArray(payload.display.changes)) {
+    const text = (v: unknown) => (typeof v === "string" ? v : "");
+    const changes = payload.display.changes.filter(isRecord);
+    const notes = Array.isArray(payload.display.notes) ? payload.display.notes.filter((n): n is string => typeof n === "string") : [];
+    return (
+      <section aria-label="Proposed change">
+        <dl className="grid gap-2 text-sm">{changes.map(c => <div key={text(c.field)}><dt className="text-muted-foreground">{text(c.field)}</dt><dd className="[overflow-wrap:anywhere]">{text(c.from) ? `${text(c.from)} → ${text(c.to)}` : text(c.to)}</dd></div>)}</dl>
+        {notes.map(note => <p key={note} data-slot="reflection-text" className={REFLECTION_TEXT}>{note}</p>)}
+      </section>
+    );
+  }
   return null;
+}
+
+/** "turn on the morning brief" or 'send proactive messages to "Ops"', from the daemon-written proposal sentence. */
+function proposalSentence(payload: unknown): string {
+  const sentence = isRecord(payload) && isRecord(payload.sentence) ? payload.sentence : null;
+  if (!sentence || typeof sentence.verb !== "string") return "a change";
+  return typeof sentence.name === "string" ? `${sentence.verb} “${sentence.name}”` : sentence.verb;
 }
 
 /** Human label for a Slack-originated approval source, or null for desk/unknown sources. */
@@ -161,7 +180,8 @@ export function ApprovalCard({
   // Only approvals the daemon itself created for the owner (no turn, its own source) read as "you asked"; a lookalike tool name does not.
   const serverCheck = a.toolName === "mcp_server_check" && a.source === "mcp-server-check" && a.turnId === null;
   const commandReview = a.toolName === "mcp_command_review" && a.source === "mcp-command-review" && a.turnId === null;
-  const management = a.toolName === "management_automation" && a.source === "management-proposal" && a.turnId === null;
+  const management = a.toolName.startsWith("management_") && a.source === "management-proposal" && a.turnId === null;
+  const automationProposal = management && a.toolName === "management_automation";
   const ownerAction = serverCheck || commandReview || management;
   const managementAction = management && isRecord(a.payload) && isRecord(a.payload.display) ? String(a.payload.display.action) : "";
   const proposer = botName ?? (management && isRecord(a.payload) && typeof a.payload.proposedBy === "string" ? a.payload.proposedBy : "The bot");
@@ -222,7 +242,7 @@ export function ApprovalCard({
   const Content = compact ? ItemContent : CardContent;
   const actions = management && !canDecide ? <p className="text-sm text-muted-foreground">Needs an owner or full-access device to decide.</p> : <>
         <Button type="button" disabled={busy} onClick={() => void run({ kind: "accept" })}>
-          {serverCheck ? "Check server" : commandReview ? "Approve command" : management ? (managementAction === "create" ? "Create automation" : managementAction === "delete" ? "Delete automation" : "Apply change") : avatarAddition ? "Add to library" : "Accept"}
+          {serverCheck ? "Check server" : commandReview ? "Approve command" : management ? (automationProposal && managementAction === "create" ? "Create automation" : automationProposal && managementAction === "delete" ? "Delete automation" : "Apply change") : avatarAddition ? "Add to library" : "Accept"}
         </Button>
         {!ownerAction && <Button variant="outline" type="button" aria-expanded={mode === "edit"} disabled={!a.canEdit || busy} onClick={openEdit}>
           Edit
@@ -242,7 +262,7 @@ export function ApprovalCard({
   return (
     <Surface variant={compact ? "outline" : undefined} size="sm" role="article" aria-labelledby={`approval-${a.id}`} className={compact ? "max-w-2xl gap-4" : undefined}>
       <Header className={compact ? "flex-wrap items-start gap-3" : undefined}>
-        <Heading className={compact ? "min-w-0 flex-1 [display:block]" : undefined}><h2 id={`approval-${a.id}`} className="break-words">{serverCheck ? "You asked OpenAg to check an MCP server" : commandReview ? "You asked OpenAg to review a command" : management ? <>{proposer} proposes {managementAction === "create" ? "a new automation" : "an automation change"}</> : <>{botName ?? a.botId} wants to {approvalAction(a.toolName)}</>}</h2></Heading>
+        <Heading className={compact ? "min-w-0 flex-1 [display:block]" : undefined}><h2 id={`approval-${a.id}`} className="break-words">{serverCheck ? "You asked OpenAg to check an MCP server" : commandReview ? "You asked OpenAg to review a command" : automationProposal ? <>{proposer} proposes {managementAction === "create" ? "a new automation" : "an automation change"}</> : management ? <>{proposer} proposes to {proposalSentence(a.payload)}</> : <>{botName ?? a.botId} wants to {approvalAction(a.toolName)}</>}</h2></Heading>
         <Description className="flex flex-wrap items-center gap-2">{inline && <Badge variant="attention">Waiting for you</Badge>}<Badge variant="outline">{a.toolClass}</Badge></Description>
       </Header>
       <Content className="flex min-w-0 flex-col gap-3">
@@ -301,7 +321,7 @@ export function PermissionEvidence({value,pending=false}:{value:unknown;pending?
 export function ProposalDetails({approval:a}:{approval:Approval}) {
   return <section aria-label="Reviewed action" className="flex min-w-0 flex-col gap-3 text-sm">
     {a.status==="pending"&&<PermissionEvidence value={a.review?.permission} pending/>}
-    {!a.canEdit && a.toolName !== "mcp_server_check" && a.toolName !== "mcp_command_review" && a.toolName !== "management_automation" && <p className="text-muted-foreground">This tool cannot validate edits here. Respond to request a new proposal.</p>}
+    {!a.canEdit && a.toolName !== "mcp_server_check" && a.toolName !== "mcp_command_review" && !a.toolName.startsWith("management_") && <p className="text-muted-foreground">This tool cannot validate edits here. Respond to request a new proposal.</p>}
     {Array.isArray(a.review?.nativeFiles)&&a.review.nativeFiles.map((f:any)=><Disclosure key={f.path} title={<>Review file change: {f.path}</>}> <p className="font-medium">Current file</p><EvidenceBlock>{f.before||"New empty file"}</EvidenceBlock><p className="font-medium">Proposed file</p><EvidenceBlock>{f.after===null?"Delete this file":f.after}</EvidenceBlock></Disclosure>)}
     {typeof a.review?.before==="string" && <Disclosure title={<>Current file before this proposal{a.review.beforeTruncated?" (shortened)":""}</>}> <EvidenceBlock>{a.review.before||"New empty file"}</EvidenceBlock><p className="text-muted-foreground">The daemon will refuse the write if this reviewed file changes.</p></Disclosure>}
     <Disclosure title="Review details">

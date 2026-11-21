@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "../api";
 import { ProactiveHistory, ProactiveSources } from "./ProactiveSources";
@@ -22,5 +22,21 @@ describe("Proactive sources and history", () => {
     render(<><ProactiveSources api={api} canManage /><ProactiveHistory api={api} canManage /></>);
     await waitFor(() => expect(api.getProactive).toHaveBeenCalledTimes(2));
     expect(screen.queryByText("Needs an owner or full-access device.")).toBeNull();
+  });
+
+  it("shows model calls per day with provider-reported tokens", async () => {
+    const api = { getProactive: vi.fn(async () => ({ ...status, usage: [
+      { date: "2026-11-20", calls: 3, models: ["openai/gpt-5.4-mini"], tokens: { input: 11869, output: 74, reportedCalls: 3 } },
+      { date: "2026-11-19", calls: 8, models: ["gpt-6.1-terra"], tokens: null },
+    ] })) } as unknown as Api;
+    render(<ProactiveHistory api={api} canManage />);
+    const table = await screen.findByRole("table", { name: "Model use by day" });
+    const rows = within(table).getAllByRole("row").slice(1).map((row) => row.textContent);
+    expect(rows[0]).toContain("3");
+    expect(rows[0]).toContain("openai/gpt-5.4-mini");
+    expect(rows[0]).toContain("11,869 in");
+    expect(rows[0]).toContain("74 out");
+    expect(rows[1]).toContain("8");
+    expect(rows[1]).toContain("Not reported");
   });
 });

@@ -5,6 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { hashToken } from "./auth.js";
+import { PROPOSAL_TOOLS } from "./policy.js";
 import type { Runner } from "./runtimes/runner.js";
 import { enabledTools, toolSchema, type ToolDef } from "./tools/registry.js";
 
@@ -20,7 +21,7 @@ export const MCP_TOOL_NAMES = [
   "agent_models", "agent_create", "agent_settings_set", "agent_handle_set", "agent_model_set", "agent_skills_assign",
   "request_input",
   "create_work",
-  "propose_automation",
+  ...PROPOSAL_TOOLS,
   "avatar_preview",
   "avatar_library_add",
   "drive_search",

@@ -177,5 +177,17 @@
       "apps/daemon/src/conversation-forks.ts",
       "apps/desk/src/components/Feed.tsx"
     ]
+  },
+  {
+    "slug": "proposals",
+    "title": "Default bot proposals",
+    "summary": "Changes the default bot can propose, who accepts them, and what can never be proposed.",
+    "sources": [
+      "docs/notes/default-bot-management-design.md",
+      "apps/daemon/src/management-proposals.ts",
+      "apps/daemon/src/management-automation.ts",
+      "apps/daemon/src/management-settings.ts",
+      "apps/desk/src/components/ApprovalCard.tsx"
+    ]
   }
 ]

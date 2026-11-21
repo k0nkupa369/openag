@@ -20,7 +20,7 @@ const DEFAULTS: PushSettings = {
   maxPerHour: 20,
 };
 
-export function NotificationsPanel({ api }: { api: Api }) {
+export function NotificationsPanel({ api, canManage = false }: { api: Api; canManage?: boolean }) {
   const pending = useRef(false);
   const [loaded, setLoaded] = useState(false);
   const [enabled, setEnabled] = useState(DEFAULTS.enabled);
@@ -158,13 +158,14 @@ export function NotificationsPanel({ api }: { api: Api }) {
 
   return (
     <div className="grid gap-4" onChange={() => setNotice(null)}>
-      <fieldset disabled={busy || !loaded} className="min-w-0 border-0 p-0" data-slot="field-set"><FieldGroup>
+      <fieldset disabled={busy || !loaded || !canManage} className="min-w-0 border-0 p-0" data-slot="field-set"><FieldGroup>
+      {!canManage && <p className="m-0 text-sm text-muted-foreground">Needs an owner or full-access device.</p>}
       <p className="text-muted-foreground">
         ntfy.sh is a public service. Anyone who learns your topic name can read these notifications, so the topic is
         kept secret and messages contain no details by default.
       </p>
 
-      <Field orientation="horizontal"><FieldLabel htmlFor="push-enabled">Enable push notifications</FieldLabel><Switch id="push-enabled" checked={enabled} onCheckedChange={setEnabled} /></Field>
+      <Field orientation="horizontal"><FieldLabel htmlFor="push-enabled">Enable push notifications</FieldLabel><Switch id="push-enabled" disabled={busy || !loaded || !canManage} checked={enabled} onCheckedChange={setEnabled} /></Field>
 
       <Field><FieldLabel htmlFor="push-server">Server</FieldLabel>
         <Input id="push-server" className="text-foreground" value={server} onChange={(e) => setServer(e.target.value)} maxLength={200} />
@@ -172,7 +173,9 @@ export function NotificationsPanel({ api }: { api: Api }) {
 
       <div>
         <span>Topic</span>
-        {topic === null ? (
+        {!canManage ? (
+          <p className="text-muted-foreground">{topic === null ? "Not set" : "Set"}</p>
+        ) : topic === null ? (
           <Button variant="outline" type="button" onClick={generate} disabled={busy}>
             Generate topic
           </Button>
@@ -213,7 +216,7 @@ export function NotificationsPanel({ api }: { api: Api }) {
       </Field>
       <p className="text-muted-foreground">Where tapping a notification opens OpenAg.</p>
 
-      <Field orientation="horizontal"><FieldLabel htmlFor="push-detail">Include details in pings</FieldLabel><Switch id="push-detail" checked={includeDetail} onCheckedChange={setIncludeDetail} /></Field>
+      <Field orientation="horizontal"><FieldLabel htmlFor="push-detail">Include details in pings</FieldLabel><Switch id="push-detail" disabled={busy || !loaded || !canManage} checked={includeDetail} onCheckedChange={setIncludeDetail} /></Field>
       <p className="text-muted-foreground">
         {includeDetail
           ? "On: ping notifications include the start of the bot's reason. The topic is public-relay traffic, so keep it secret."
@@ -232,10 +235,10 @@ export function NotificationsPanel({ api }: { api: Api }) {
       </Field>
 
       <div>
-        <Button variant="outline" type="button" onClick={save} disabled={busy || !loaded}>
+        <Button variant="outline" type="button" onClick={save} disabled={busy || !loaded || !canManage}>
           Save notifications
         </Button>{" "}
-        <Button variant="outline" type="button" onClick={sendTest} disabled={busy}>
+        <Button variant="outline" type="button" onClick={sendTest} disabled={busy || !canManage}>
           Send test
         </Button>
       </div>

@@ -34,7 +34,12 @@ try {
   assert.match(knowledge.load('memory-skills').body, /saves validated memory notes automatically, without approval/);
   assert.match(knowledge.load('memory-skills').body, /delete the unwanted text in Saved memory/);
   assert.match(knowledge.load('memory-skills').body, /New-skill changes still require accepted or validly edited approval/);
-  assert.match(knowledge.load('proactive').body, /A proposal changes nothing/);
+  assert.match(knowledge.load('proposals').body, /A proposal changes nothing/);
+  assert.match(knowledge.load('proposals').body, /propose_proactive/);
+  assert.match(knowledge.load('proposals').body, /propose_delivery_room/);
+  assert.match(knowledge.load('proposals').body, /propose_room/);
+  assert.match(knowledge.load('proposals').body, /remove agents/);
+  assert.match(knowledge.load('proposals').body, /propose_responsibility/);
   assert.match(knowledge.load('proactive').body, /Turn on for this device asks the browser for permission/);
   assert.match(knowledge.load('proactive').body, /Removing a device stops its notifications/);
   assert.match(knowledge.load('overview').body, /Create phone invite makes a single-use invite/);
@@ -43,8 +48,8 @@ try {
   assert.match(knowledge.load('bots-models').body, /sends store=false/);
   assert.match(knowledge.load('bots-models').body, /stops at once without retries/);
   assert.match(knowledge.load('proactive').body, /limited devices can view automations/);
-  assert.match(knowledge.load('proactive').body, /Only the owner or a full-access device can accept it/);
-  assert.match(knowledge.load('overview').body, /propose scheduled automations/);
+  assert.match(knowledge.load('proposals').body, /only the owner or a full-access device can accept it/);
+  assert.match(knowledge.load('overview').body, /propose scheduled automations and proactive settings/);
   assert.match(knowledge.load('room-creation').body, /Add agents/);
   assert.match(knowledge.load('room-creation').body, /Save room details/);
   assert.match(knowledge.load('conversations').body,/Request details/);
@@ -62,7 +67,7 @@ try {
   assert.match(knowledge.load('conversation-forks').body,/Existing forked conversations remain available/);
   assert.match(knowledge.load('approvals').body,/Local shell search includes `rg`/);
 
-  assert.equal(bundle.topics.length, 13);
+  assert.equal(bundle.topics.length, 14);
   assert.match(knowledge.load("dictation").body, /Stop transcribes/);
   assert.match(knowledge.load("dictation").body, /no automatic retry/);
   assert.match(knowledge.load("dictation").body, /rather\s+than a fixed model list/);
@@ -230,7 +235,7 @@ try {
         prompts.push({ kind: 'acp', text: params.prompt.filter(p => p.type === 'text').map(p => p.text).join('\n') });
         const c = await connect(sessions.get(params.sessionId));
         try {
-          for (const [name, args] of [['openag_help', { topic: 'approvals' }], ['openag_help', { topic: 'computer-connectors' }], ['openag_help', { topic: 'conversations' }], ['openag_help', { topic: 'proactive' }], ['openag_help', { topic: 'overview' }], ['openag_help', { topic: 'room-creation' }], ['openag_help', { topic: 'bots-models' }], ['openag_help', { topic: 'agent-requests' }], ['openag_help', { topic: 'conversation-forks' }], ['openag_status', {}], ['openag_capabilities', {}]]) results.push({ kind: 'acp', name, result: await c.callTool({ name, arguments: args }) });
+          for (const [name, args] of [['openag_help', { topic: 'approvals' }], ['openag_help', { topic: 'computer-connectors' }], ['openag_help', { topic: 'conversations' }], ['openag_help', { topic: 'proactive' }], ['openag_help', { topic: 'overview' }], ['openag_help', { topic: 'room-creation' }], ['openag_help', { topic: 'bots-models' }], ['openag_help', { topic: 'agent-requests' }], ['openag_help', { topic: 'conversation-forks' }], ['openag_help', { topic: 'proposals' }], ['openag_status', {}], ['openag_capabilities', {}]]) results.push({ kind: 'acp', name, result: await c.callTool({ name, arguments: args }) });
         } finally { await c.close(); }
         return { stopReason: 'end_turn' };
       });
@@ -240,7 +245,7 @@ try {
   const model = new MockLanguageModelV3({ doGenerate: async args => {
     prompts.push({ kind: 'api', text: JSON.stringify(args.prompt) });
     const done = args.prompt.some(m => m.role === 'tool');
-    return { content: done ? [{ type: 'text', text: 'Controlled help response' }] : [{ type: 'tool-call', toolCallId: 'help', toolName: 'openag_help', input: '{"topic":"approvals"}' }, { type: 'tool-call', toolCallId: 'connectors', toolName: 'openag_help', input: '{"topic":"computer-connectors"}' }, { type: 'tool-call', toolCallId: 'conversations', toolName: 'openag_help', input: '{"topic":"conversations"}' }, { type: 'tool-call', toolCallId: 'proactive', toolName: 'openag_help', input: '{"topic":"proactive"}' }, { type: 'tool-call', toolCallId: 'overview', toolName: 'openag_help', input: '{"topic":"overview"}' }, { type: 'tool-call', toolCallId: 'room-creation', toolName: 'openag_help', input: '{"topic":"room-creation"}' }, { type: 'tool-call', toolCallId: 'avatars', toolName: 'openag_help', input: '{"topic":"bots-models"}' }, { type: 'tool-call', toolCallId: 'agent-requests', toolName: 'openag_help', input: '{"topic":"agent-requests"}' }, { type: 'tool-call', toolCallId: 'conversation-forks', toolName: 'openag_help', input: '{"topic":"conversation-forks"}' }, { type: 'tool-call', toolCallId: 'status', toolName: 'openag_status', input: '{}' }, { type: 'tool-call', toolCallId: 'capabilities', toolName: 'openag_capabilities', input: '{}' }], finishReason: { unified: done ? 'stop' : 'tool-calls', raw: done ? 'stop' : 'tool_calls' }, usage, warnings: [] };
+    return { content: done ? [{ type: 'text', text: 'Controlled help response' }] : [{ type: 'tool-call', toolCallId: 'help', toolName: 'openag_help', input: '{"topic":"approvals"}' }, { type: 'tool-call', toolCallId: 'connectors', toolName: 'openag_help', input: '{"topic":"computer-connectors"}' }, { type: 'tool-call', toolCallId: 'conversations', toolName: 'openag_help', input: '{"topic":"conversations"}' }, { type: 'tool-call', toolCallId: 'proactive', toolName: 'openag_help', input: '{"topic":"proactive"}' }, { type: 'tool-call', toolCallId: 'overview', toolName: 'openag_help', input: '{"topic":"overview"}' }, { type: 'tool-call', toolCallId: 'room-creation', toolName: 'openag_help', input: '{"topic":"room-creation"}' }, { type: 'tool-call', toolCallId: 'avatars', toolName: 'openag_help', input: '{"topic":"bots-models"}' }, { type: 'tool-call', toolCallId: 'agent-requests', toolName: 'openag_help', input: '{"topic":"agent-requests"}' }, { type: 'tool-call', toolCallId: 'conversation-forks', toolName: 'openag_help', input: '{"topic":"conversation-forks"}' }, { type: 'tool-call', toolCallId: 'proposals', toolName: 'openag_help', input: '{"topic":"proposals"}' }, { type: 'tool-call', toolCallId: 'status', toolName: 'openag_status', input: '{}' }, { type: 'tool-call', toolCallId: 'capabilities', toolName: 'openag_capabilities', input: '{}' }], finishReason: { unified: done ? 'stop' : 'tool-calls', raw: done ? 'stop' : 'tool_calls' }, usage, warnings: [] };
   } });
   const ollama = createOllamaRuntime({ tools: defs, env: {}, fetch: async (url, init) => {
     assert.ok(String(url).endsWith('/api/chat'), 'Only controlled chat transport expected');

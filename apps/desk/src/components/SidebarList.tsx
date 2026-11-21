@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { houseEase } from "@/lib/motion";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, GripVertical, MoreHorizontal, Pin, PinOff } from "lucide-react";
 import { Button } from "./ui/button";
@@ -47,12 +48,13 @@ export function SidebarList<T extends { id: string; name: string }>({ kind, item
     beforeDrop.current = null;
     stopSettling();
     if (!before || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const ease = houseEase();
     for (const [id, element] of rows.current) {
       const previous = before.get(id);
       if (previous === undefined || !element.animate) continue;
       const delta = previous - element.getBoundingClientRect().top;
       if (!delta) continue;
-      const animation = element.animate([{ transform: `translateY(${delta}px)` }, { transform: "translateY(0)" }], { duration: 200, easing: "cubic-bezier(0.23, 1, 0.32, 1)" });
+      const animation = element.animate([{ transform: `translateY(${delta}px)` }, { transform: "translateY(0)" }], { duration: 200, easing: ease });
       settling.current.add(animation);
       animation.onfinish = animation.oncancel = () => { settling.current.delete(animation); };
     }
@@ -83,7 +85,7 @@ export function SidebarList<T extends { id: string; name: string }>({ kind, item
     const from = row.style.transform;
     row.style.transform = "";
     if (from && row.animate && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      const animation = row.animate([{ transform: from }, { transform: "translateY(0)" }], { duration: 200, easing: "cubic-bezier(0.23, 1, 0.32, 1)" });
+      const animation = row.animate([{ transform: from }, { transform: "translateY(0)" }], { duration: 200, easing: houseEase() });
       settling.current.add(animation);
       animation.onfinish = animation.oncancel = () => { settling.current.delete(animation); };
     }

@@ -8,6 +8,7 @@ import { type Db, openDb } from "./db/index.js";
 import { createGateway } from "./gateway.js";
 import { createLedger } from "./ledger.js";
 import { createBot, createRoom } from "./rooms.js";
+import { KNOWN_SETTINGS } from "./settings.js";
 
 const OWNER = "owner-test-token";
 const json = { "content-type": "application/json" };
@@ -75,3 +76,16 @@ describe("device access levels", () => {
     expect(list.devices.find((d) => d.id === other.device.id)?.access).toBe("limited");
   });
 });
+
+describe("settings writes", () => {
+  test("every setting is owner or full-device only; a limited device changes nothing", async () => {
+    const limited = auth.createDevice("phone"), full = auth.createDevice("mac", "owner", "full");
+    const current = ((await (await app.request("/settings", { headers: bearer(OWNER) })).json()) as { settings: Record<string, unknown> }).settings;
+    const put = (key: string, token: string) => app.request(`/settings/${key}`, { method: "PUT", headers: bearer(token), body: JSON.stringify(current[key]) });
+    for (const key of Object.keys(KNOWN_SETTINGS)) {
+      expect({ key, status: (await put(key, limited.token)).status }).toEqual({ key, status: 403 });
+      expect({ key, forbidden: (await put(key, full.token)).status === 403 }).toEqual({ key, forbidden: false });
+    }
+  });
+});
+

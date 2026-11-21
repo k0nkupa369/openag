@@ -11,7 +11,7 @@ import { requestInputTool } from "./input.js";
 import type { Results } from "../results.js";
 import { createResultTool } from "./results.js";
 import { createWorkTool } from './work.js';
-import { createProposeAutomationTool } from "./management.js";
+import { createProposalTools } from "./management.js";
 import type { ManagementProposals } from "../management-proposals.js";
 import type { Computer } from "../computer.js";
 import type { Pusher } from "../push.js";
@@ -36,7 +36,7 @@ export function createFirstPartyTools(deps: { avatars?: AvatarLibrary; db?: Db; 
   capabilityGuidance(): string;
 } {
   const extra = [...createAgentTools(), ...(deps.google?.tools ?? []), openagHelpTool, createOpenagStatusTool(deps.db), requestInputTool,...createComputerTools(deps.computer), createNotifyTool(deps.pusher), memoryAppendTool, ...createSkillTools(deps.db, deps.skills), createResultTool(deps.results)];
-  extra.push(createWorkTool(deps.db), ...createAvatarTools(deps.avatars), createProposeAutomationTool(deps.proposals ?? (() => undefined)));
+  extra.push(createWorkTool(deps.db), ...createAvatarTools(deps.avatars), ...createProposalTools(deps.proposals ?? (() => undefined)));
   const definitions = [...defaultToolDefs, ...extra];
   const catalogue = createCapabilityCatalogue(deps.db, () => definitions);
   const capabilities = createCapabilitiesTool(catalogue, () => deps.db !== undefined);

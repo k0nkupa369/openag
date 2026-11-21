@@ -54,7 +54,7 @@ describe("OpsPanel helpers", () => {
 
 describe("OpsPanel backups", () => {
   it("shows the last backup, the list, and the off-machine hint", async () => {
-    render(<OpsPanel api={makeApi()} />);
+    render(<OpsPanel canManage api={makeApi()} />);
     await flush();
     expect(screen.getByText(/Last backup .*: ok \(openag-1\.db\)\./)).toBeTruthy();
     // The file list sits in the collapsed "Backup files" disclosure.
@@ -67,7 +67,7 @@ describe("OpsPanel backups", () => {
 
   it("runs a backup and refreshes the list", async () => {
     const api = makeApi();
-    render(<OpsPanel api={api} />);
+    render(<OpsPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Back up now" }));
     await flush();
@@ -79,7 +79,7 @@ describe("OpsPanel backups", () => {
 
   it("explains a 403 from a device", async () => {
     const api = makeApi({ runBackup: vi.fn(async () => { throw new ApiError("forbidden", 403); }) });
-    render(<OpsPanel api={api} />);
+    render(<OpsPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Back up now" }));
     await flush();
@@ -89,7 +89,7 @@ describe("OpsPanel backups", () => {
 
   it("shows the daemon error when a backup fails", async () => {
     const api = makeApi({ runBackup: vi.fn(async () => { throw new ApiError("disk full", 500); }) });
-    render(<OpsPanel api={api} />);
+    render(<OpsPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "Back up now" }));
     await flush();
@@ -99,7 +99,7 @@ describe("OpsPanel backups", () => {
 
   it("saves backup settings through the settings API", async () => {
     const api = makeApi();
-    render(<OpsPanel api={api} />);
+    render(<OpsPanel canManage api={api} />);
     await flush();
     fireEvent.click(screen.getByRole("switch", { name: /Scheduled backups/ }));
     fireEvent.change(screen.getByLabelText("Copies to keep"), { target: { value: "14" } });
@@ -112,7 +112,7 @@ describe("OpsPanel backups", () => {
 
   it("rejects an invalid time without calling the API", async () => {
     const api = makeApi();
-    render(<OpsPanel api={api} />);
+    render(<OpsPanel canManage api={api} />);
     await flush();
     // jsdom sanitizes an out-of-range time value to "", which fails the same HH:MM check.
     fireEvent.change(screen.getByLabelText(/Daily time/), { target: { value: "25:00" } });
@@ -125,7 +125,7 @@ describe("OpsPanel backups", () => {
 
 describe("OpsPanel turn budget", () => {
   it("says the limits are per-day turn counts, not spending", async () => {
-    render(<OpsPanel api={makeApi()} />);
+    render(<OpsPanel canManage api={makeApi()} />);
     await flush();
     expect(screen.getByText(/Limit model turns per day/)).toBeTruthy();
     expect(screen.getByText(/do not measure spending/)).toBeTruthy();
@@ -133,7 +133,7 @@ describe("OpsPanel turn budget", () => {
 
   it("saves both limits", async () => {
     const api = makeApi();
-    render(<OpsPanel api={api} />);
+    render(<OpsPanel canManage api={api} />);
     await flush();
     fireEvent.change(screen.getByLabelText("Turns per bot"), { target: { value: "50" } });
     fireEvent.change(screen.getByLabelText("Unattended turns"), { target: { value: "5" } });
@@ -145,7 +145,7 @@ describe("OpsPanel turn budget", () => {
 
   it("rejects a non-integer limit locally", async () => {
     const api = makeApi();
-    render(<OpsPanel api={api} />);
+    render(<OpsPanel canManage api={api} />);
     await flush();
     fireEvent.change(screen.getByLabelText("Turns per bot"), { target: { value: "2.5" } });
     fireEvent.click(screen.getByRole("button", { name: "Save limits" }));
@@ -157,7 +157,7 @@ describe("OpsPanel turn budget", () => {
 
 describe("OpsPanel health", () => {
   it("shows the not-configured hint and the counters", async () => {
-    render(<OpsPanel api={makeApi()} />);
+    render(<OpsPanel canManage api={makeApi()} />);
     await flush();
     expect(screen.getByText("Liveness ping").nextElementSibling?.textContent).toBe("Not configured");
     expect(screen.getByText(/Log rotations/)).toBeTruthy();
@@ -167,9 +167,26 @@ describe("OpsPanel health", () => {
     const api = makeApi({
       getOps: vi.fn(async () => ({ ...OPS, healthcheck: { configured: true, lastOkAt: null, lastError: "HTTP 500" } })),
     });
-    render(<OpsPanel api={api} />);
+    render(<OpsPanel canManage api={api} />);
     await flush();
     expect(screen.getByText("Liveness ping").nextElementSibling?.textContent).toBe("Configured");
     expect(screen.getByText("HTTP 500")).toBeTruthy();
   });
 });
+
+const isDisabled = (el: Element) => el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true" || el.hasAttribute("data-disabled");
+
+describe("limited device", () => {
+  it("shows backups and limits read-only and never saves", async () => {
+    const api = makeApi();
+    render(<OpsPanel api={api} />);
+    expect(await screen.findByText("Needs an owner or full-access device.")).toBeTruthy();
+    for (const name of ["Save backup settings", "Save limits", "Back up now"]) {
+      const b = await screen.findByRole("button", { name });
+      expect({ name, disabled: isDisabled(b) }).toEqual({ name, disabled: true });
+      fireEvent.click(b);
+    }
+    expect(api.putSetting).not.toHaveBeenCalled();
+  });
+});
+

@@ -50,6 +50,7 @@ import { createMcpOAuth, type McpOAuth } from "./mcp-oauth.js";
 import { createMcpServerService } from "./mcp-servers.js";
 import { createMcpServerCheck } from "./mcp-check.js";
 import { createManagementProposals, type ManagementProposals } from "./management-proposals.js";
+import { PROPOSAL_KINDS } from "./tools/management.js";
 import { createWebPush } from "./web-push-subscriptions.js";
 import { createMcpCommandReview } from "./mcp-command-review.js";
 import { acpOfferedTools } from "./mcp-forwarding.js";
@@ -225,7 +226,7 @@ const responsibilities=createResponsibilities({db,ledger,runner,wake});
 responsibilitiesRef.current=responsibilities;
 const automations = createAutomationManager({ db, ledger, runner, scheduler, wake, tz });
 automations.sync();
-const proposals = createManagementProposals({ db, ledger, approvals, tz, automations: () => automations });
+const proposals = createManagementProposals({ db, ledger, approvals, tz, automations: () => automations, responsibilities: () => responsibilitiesRef.current, kinds: PROPOSAL_KINDS });
 proposalsRef.current = proposals;
 // Rejections are audited at most once a minute, with a short reason only (never the secret, body or slug).
 let lastHookRejectAudit = Number.NEGATIVE_INFINITY;

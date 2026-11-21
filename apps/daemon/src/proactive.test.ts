@@ -21,6 +21,8 @@ interface Fixture {
   messages: Array<Record<string, unknown>>;
   verdict: Record<string, unknown>;
   failRead?: string;
+  mailbox?: Array<Record<string, unknown> & { ts: number }>;
+  reads: number[];
   calls: Call[];
   assessments: string[];
 }
@@ -55,6 +57,15 @@ function fakeRunner(): Runner {
           }
           if (f.failRead) return { ok: false, message: f.failRead };
           const tool = args.tools[0];
+          if (f.mailbox) {
+            const [, after, before] = String(tool.arguments.query).match(/after:(\d+) before:(\d+)/)!.map(Number);
+            const inWindow = f.mailbox.filter((m) => m.ts / 1000 >= after! && m.ts / 1000 < before!);
+            const index = tool.arguments.page_token ? Number(String(tool.arguments.page_token).slice(1)) : 0;
+            f.reads.push(index);
+            const continuation = (index + 1) * 10 < inWindow.length ? `nav1:${Buffer.from(`p${index + 1}`).toString("base64url")}` : undefined;
+            const messages = inWindow.slice(index * 10, index * 10 + 10).map(({ ts: _ts, ...m }) => m);
+            return { ok: true, result: envelope({ results: [{ tool_slug: tool.tool_slug, response: { successful: true, data: { messages, continuation } } }] }) };
+          }
           return { ok: true, result: envelope({ results: [{ tool_slug: tool.tool_slug, response: { successful: true, data: { messages: f.messages } } }] }) };
         },
       };
@@ -93,6 +104,7 @@ beforeEach(() => {
     messages: [{ id: "m1", subject: "Please sign this today", snippet: "Direct request", internalDate: "100" }],
     verdict: { verdict: "digest", reason: "A signature is requested", urgency: "normal", dedupe_key: "sign" },
     calls: [],
+    reads: [],
     assessments: [],
   };
   proactive = make();
@@ -348,3 +360,76 @@ describe("restart and status", () => {
     expect(account("gmail", "g-1").alias).not.toContain("abcdefghijklmnopqrstuvwxyz");
   });
 });
+
+describe("model use", () => {
+  const DAY = 86_400_000;
+  const event = (roomId: string, ts: number, type: string, payload: Record<string, unknown>) =>
+    db.prepare("INSERT INTO events (room_id, ts, actor, type, payload_json) VALUES (?, ?, 'boss', ?, ?)").run(roomId, ts, type, JSON.stringify(payload));
+  const call = (ts: number, usage?: Record<string, unknown>, roomId = "_proactive") => {
+    event(roomId, ts, "request_prepared", { requestedModel: "openai/gpt-5.4-mini" });
+    event(roomId, ts, "request_attempt", { attempt: 1, status: "started" });
+    event(roomId, ts + 1, "request_attempt", { attempt: 1, status: "returned", ...(usage ? { usage } : {}) });
+  };
+
+  test("counts model calls per local day with provider-reported tokens, newest day first", () => {
+    call(T0 - DAY);
+    call(T0 - DAY + 60_000);
+    call(T0, { source: "provider-reported", unit: "tokens", inputTokens: 11869, outputTokens: 74 });
+    event("_proactive", T0 + 2, "request_attempt", { attempt: 1, status: "cancelled" });
+    call(T0 - 20 * DAY, { source: "provider-reported", unit: "tokens", inputTokens: 9, outputTokens: 9 });
+    call(T0, { source: "provider-reported", unit: "tokens", inputTokens: 5, outputTokens: 5 }, "_heartbeat");
+
+    expect(proactive.status().usage).toEqual([
+      { date: "2026-11-05", calls: 1, models: ["openai/gpt-5.4-mini"], tokens: { input: 11869, output: 74, reportedCalls: 1 } },
+      { date: "2026-11-04", calls: 2, models: ["openai/gpt-5.4-mini"], tokens: null },
+    ]);
+  });
+});
+
+describe("catching up", () => {
+  /** `count` messages received in the hour before T0, oldest first. */
+  const mailbox = (count: number) =>
+    Array.from({ length: count }, (_, i) => ({ id: `m${i}`, subject: `Message ${i}`, snippet: "Body", internalDate: String(i), ts: T0 - 60 * 60_000 + i * 1000 }));
+  const notIncomplete = (status: string) => status !== "incomplete";
+
+  test("a check that is behind keeps reading until the backlog is covered, one assessment per 20 items", async () => {
+    f.mailbox = mailbox(70);
+    await select("gmail");
+    await proactive.check();
+    expect(f.reads).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(f.assessments).toHaveLength(4);
+    expect(run().map((r) => r.items)).toEqual([20, 20, 20, 10]);
+    expect(run().map((r) => notIncomplete(r.status))).toEqual([false, false, false, true]);
+    expect(account("gmail", "g-1")).toMatchObject({ status: "checked", covered_until: T0, cursor_json: null });
+  });
+
+  test("catching up stops at five assessments per account and continues next time", async () => {
+    f.mailbox = mailbox(130);
+    await select("gmail");
+    await proactive.check();
+    expect(f.reads).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(f.assessments).toHaveLength(5);
+    expect(run().map((r) => r.status)).toEqual(Array(5).fill("incomplete"));
+    expect(account("gmail", "g-1")).toMatchObject({ status: "incomplete", covered_until: null });
+    for (const text of f.assessments) expect(text.slice(text.indexOf("UNTRUSTED EXCERPTS:")).length).toBeLessThan(24_100);
+    f.clock += 60 * 60_000;
+    await proactive.check();
+    // The saved window finishes (pages 10-12), then a fresh window from T0 to now finds nothing new.
+    expect(f.reads.slice(10)).toEqual([10, 11, 12, 0]);
+    expect(f.assessments).toHaveLength(7);
+    expect(run().slice(5).map((r) => [notIncomplete(r.status), r.items])).toEqual([[false, 20], [true, 10], [true, 0]]);
+    expect(account("gmail", "g-1")).toMatchObject({ status: "checked", covered_until: T0 + 60 * 60_000 });
+  });
+
+  test("a resumed window that ended long ago is followed by a fresh window in the same check", async () => {
+    f.mailbox = mailbox(0);
+    await select("gmail");
+    const stale = T0 - 36 * 60 * 60_000;
+    db.prepare("INSERT INTO proactive_accounts (service,account_id,alias,status,covered_until,cursor_json) VALUES ('gmail','g-1','Work Gmail','incomplete',NULL,?)")
+      .run(JSON.stringify({ from: stale - 60 * 60_000, until: stale, page: 1 }));
+    await proactive.check();
+    expect(run().map((r) => [r.from_at, r.until_at])).toEqual([[stale - 60 * 60_000, stale], [stale - 60_000, T0]]);
+    expect(account("gmail", "g-1")).toMatchObject({ status: "checked", covered_until: T0 });
+  });
+});
+

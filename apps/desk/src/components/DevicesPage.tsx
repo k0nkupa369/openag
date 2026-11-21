@@ -33,6 +33,6 @@ export function DevicesPage({ api, onSignOut, identity = null, deviceNotice = nu
       <div className="flex min-w-0 flex-col gap-1"><p className="m-0 text-sm font-medium">This session</p><p className="m-0 text-sm text-muted-foreground">{identity?.kind === "device" ? `Signed in as ${identity.name}${identity.access ? ` (${identity.access} access)` : ""}` : identity?.kind === "owner" ? "Signed in as owner." : "Signed in on this device."}</p></div>
       <Button variant="outline" disabled={signingOut} onClick={() => void signOutHere()}>{signingOut ? "Signing out…" : "Sign out"}</Button>
     </div>
-    <Collapsible><CollapsibleTrigger render={<Button variant="ghost" />}><ChevronDown data-icon="inline-start" />Access &amp; recovery</CollapsibleTrigger><CollapsibleContent className="pt-4"><OwnerPanel /></CollapsibleContent></Collapsible>
+    <Collapsible><CollapsibleTrigger render={<Button variant="ghost" />}><ChevronDown data-icon="inline-start" />Access &amp; recovery</CollapsibleTrigger><CollapsibleContent><div className="pt-4"><OwnerPanel /></div></CollapsibleContent></Collapsible>
   </section>;
 }

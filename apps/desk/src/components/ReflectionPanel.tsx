@@ -33,7 +33,7 @@ function runDate(run: ReflectionRun) {
   return new Date(`${run.localDate.slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-export function ReflectionPanel({ api }: { api: Api }) {
+export function ReflectionPanel({ api, canManage = false }: { api: Api; canManage?: boolean }) {
   const pending = useRef(false);
   const [setting, setSetting] = useState<ReflectionSettings | null>(null);
   const [enabled, setEnabled] = useState(false);
@@ -166,16 +166,16 @@ export function ReflectionPanel({ api }: { api: Api }) {
     <ProactiveCard
       title="Nightly reflection"
       description="Each night a bot reviews the day and saves memories automatically. Skill changes wait in the bot’s conversation for approval. Off by default."
-      action={<Switch aria-label="Enable nightly reflection" disabled={busy} checked={enabled} onCheckedChange={v => { setEnabled(v); setNotice(null); }} />}
+      action={<Switch aria-label="Enable nightly reflection" disabled={busy || !canManage} checked={enabled} onCheckedChange={v => { setEnabled(v); setNotice(null); }} />}
     >
       <FieldGroup>
         <FieldGroup className="sm:grid sm:grid-cols-2">
-          <Field><FieldLabel htmlFor="reflection-bot">Bot</FieldLabel><SelectField id="reflection-bot" className="w-full min-h-11 max-w-full"value={botId} disabled={busy} onValueChange={(value) => { setBotId(value); setNotice(null); }}><SelectItem value="">{defaultLabel(bots)}</SelectItem>{bots.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectField></Field>
-          <Field><FieldLabel htmlFor="reflection-time">Time (HH:MM)</FieldLabel><Input id="reflection-time" type="time" value={time} disabled={busy} onChange={e => { setTime(e.target.value); setNotice(null); }} /></Field>
+          <Field><FieldLabel htmlFor="reflection-bot">Bot</FieldLabel><SelectField id="reflection-bot" className="w-full min-h-11 max-w-full"value={botId} disabled={busy || !canManage} onValueChange={(value) => { setBotId(value); setNotice(null); }}><SelectItem value="">{defaultLabel(bots)}</SelectItem>{bots.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectField></Field>
+          <Field><FieldLabel htmlFor="reflection-time">Time (HH:MM)</FieldLabel><Input id="reflection-time" type="time" value={time} disabled={busy || !canManage} onChange={e => { setTime(e.target.value); setNotice(null); }} /></Field>
         </FieldGroup>
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="button" onClick={() => void save()} disabled={busy}>Save</Button>
-          <Button variant="outline" type="button" onClick={() => void runNow()} disabled={busy || running}>Run now</Button>
+          <Button type="button" onClick={() => void save()} disabled={busy || !canManage}>Save</Button>
+          <Button variant="outline" type="button" onClick={() => void runNow()} disabled={busy || running || !canManage}>Run now</Button>
           {running && <span className="text-muted-foreground">A run is in progress.</span>}
           {notice && <span className="mt-0 mb-2 text-muted-foreground [overflow-wrap:anywhere]" role="status">{notice}</span>}
         </div>

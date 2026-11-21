@@ -50,9 +50,9 @@ describe("computer.backend setting", () => {
     expect(after.settings.computer.backend).toBe("cua");
     const asOwner = await app.request("/settings/computer", { method: "PUT", headers: bearer, body: JSON.stringify({ backend: "browserbase" }) });
     expect(asOwner.status).toBe(200);
-    // Other settings stay open to devices.
+    // Every other setting is owner-only too (gateway.access.test.ts covers each key).
     const other = await app.request("/settings/heartbeat", { method: "PUT", headers: { authorization: `Bearer ${device}`, "content-type": "application/json" }, body: JSON.stringify({ enabled: false, everyMinutes: 60, botId: null, prompt: null }) });
-    expect(other.status).toBe(200);
+    expect(other.status).toBe(403);
   });
 });
 

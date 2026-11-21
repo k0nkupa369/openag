@@ -63,7 +63,7 @@ export function ModelsPage({ api }: { api: Api }) {
   const providerRow = (p: ModelsStatus["providers"][number]) => <div className="list-row flex-wrap" key={p.id}>
     <BrandLogo brand={p.id} /><div className="list-row-main"><span className="list-row-title">{p.name}</span><span className="list-row-sub">{p.usedFor}</span>{p.set && <span className="list-row-sub">Key present{p.last4 ? ` · ••••${p.last4}` : ""}</span>}</div>
     <Badge variant={p.set ? "success" : "attention"}>{p.set ? "Present" : "Not configured"}</Badge>
-    {!p.set && <Collapsible className="w-full"><CollapsibleTrigger render={<Button variant="ghost" />}><ChevronDown data-icon="inline-start" />Setup</CollapsibleTrigger><CollapsibleContent className="flex flex-col gap-3 pt-3"><code className="whitespace-pre-wrap break-all text-sm">{setupFor(p).replaceAll("...", "…")}</code>{p.docUrl && /^https?:\/\//.test(p.docUrl) && <a href={p.docUrl} target="_blank" rel="noreferrer">Setup documentation</a>}<div><Button variant="outline" onClick={() => void copy(setupFor(p))}>{copied === setupFor(p) ? "Copied" : "Copy setup example"}</Button></div></CollapsibleContent></Collapsible>}
+    {!p.set && <Collapsible className="w-full"><CollapsibleTrigger render={<Button variant="ghost" />}><ChevronDown data-icon="inline-start" />Setup</CollapsibleTrigger><CollapsibleContent><div className="flex flex-col gap-3 pt-3"><code className="whitespace-pre-wrap break-all text-sm">{setupFor(p).replaceAll("...", "…")}</code>{p.docUrl && /^https?:\/\//.test(p.docUrl) && <a href={p.docUrl} target="_blank" rel="noreferrer">Setup documentation</a>}<div><Button variant="outline" onClick={() => void copy(setupFor(p))}>{copied === setupFor(p) ? "Copied" : "Copy setup example"}</Button></div></div></CollapsibleContent></Collapsible>}
   </div>;
   return <section className="settings-page" aria-labelledby="models-title">
     <SettingsHeader id="models-title" title="Models" description="Subscriptions, API providers and local models available to your agents." action={<Button variant="outline" disabled={busy} onClick={() => void refresh()}><RefreshCw data-icon="inline-start" />{busy ? "Checking…" : "Refresh status"}</Button>} />
@@ -76,13 +76,13 @@ export function ModelsPage({ api }: { api: Api }) {
     </SettingsSection>
     <SettingsSection icon="bell" title="API providers" description="Provider setup and available models.">
       {status?.providers.some(p => p.id !== "brave" && p.set) && <Card className="gap-0 py-0 provider-list" role="region" aria-label="Configured API providers" tabIndex={0}><CardContent className="px-0">{status.providers.filter(p => p.id !== "brave" && p.set).map(providerRow)}</CardContent></Card>}
-      <Collapsible><CollapsibleTrigger render={<Button variant="outline" />}><ChevronDown data-icon="inline-start" />Browse all supported providers</CollapsibleTrigger><CollapsibleContent className="flex flex-col gap-4 pt-4">
+      <Collapsible><CollapsibleTrigger render={<Button variant="outline" />}><ChevronDown data-icon="inline-start" />Browse all supported providers</CollapsibleTrigger><CollapsibleContent><div className="flex flex-col gap-4 pt-4">
       <Input aria-label="Search API providers" placeholder="Search providers…" value={providerQuery} onChange={e => setProviderQuery(e.target.value)} />
       <p className="hint">{status?.providers.filter(p => p.id !== "brave").length ?? 0} providers</p>
       <Card className="gap-0 py-0 provider-list" role="region" aria-label="All API providers" tabIndex={0}><CardContent className="px-0">{status?.providers.filter(p => p.id !== "brave" && `${p.name} ${p.id}`.toLowerCase().includes(providerQuery.toLowerCase())).map(providerRow)}
         {status && !status.providers.some(p => p.id !== "brave" && `${p.name} ${p.id}`.toLowerCase().includes(providerQuery.toLowerCase())) && <p className="p-4 text-sm text-muted-foreground">No matching providers.</p>}
       </CardContent></Card>
-      </CollapsibleContent></Collapsible>
+      </div></CollapsibleContent></Collapsible>
 
     </SettingsSection>
     <DictationSettings api={api} revision={JSON.stringify(catalogue)} refreshing={refreshingModels} />

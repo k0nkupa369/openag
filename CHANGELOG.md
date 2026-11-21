@@ -2,6 +2,31 @@
 
 All notable changes to OpenAg are recorded here. Versions follow [Semantic Versioning](https://semver.org); before 1.0, minor versions may change interfaces.
 
+## 0.7.5
+
+### Default bot
+- The default bot can now propose more changes, each shown as a card in the conversation. Nothing changes until you or a Full device choose Apply change, and a proposal expires after 24 hours. It can propose:
+  - turning scheduled checks, the morning brief or reflection on or off, and changing their schedule or bot;
+  - where proactive messages go;
+  - creating a room, renaming one, adding or removing agents, changing the lead, and opening a direct chat;
+  - a standing responsibility, created paused (this needs a connected mail source).
+- A card is refused if what it changes was edited after it was proposed, and Limited devices see it read-only. The bot can explain the rules (its help has a Proposals topic).
+
+### Proactive checks
+- A check that is behind (for example a busy Outlook inbox) runs up to five rounds straight away instead of waiting for the next interval. Each round still reads at most 20 items and makes at most one model call.
+- Settings → Proactive → History shows the model calls per day, the models used, and input/output tokens where the provider reports them.
+
+### Reflection
+- Nightly reflection skips OpenAg's own pings and morning briefs, so it reviews your actual conversations.
+
+### Security
+- Every settings change now needs the owner or a Full device. Before, a Limited device could change some settings (scheduled checks, reflection, backups, ntfy alerts). Limited devices also no longer see the ntfy topic.
+
+### Desk
+- Cmd+B opens and closes the sidebar instantly. Clicking the toggle keeps its short animation.
+- Expandable sections open and close smoothly instead of jumping.
+- Dragging the profile image crop is smoother.
+
 ## 0.7.4
 
 ### Desk

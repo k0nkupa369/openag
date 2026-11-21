@@ -118,3 +118,49 @@ This ran in a Cua Space ([procedure](cua-spaces-rendered-checks.md); `local:home
   - Changed fields use plain labels ("Schedule", "Prompt") instead of `scheduleCron` and `prompt`.
 
 Not covered: dark mode, a physical phone, and the "next run" line (the seed ran without the scheduler, so it was empty; the real-adapter run showed it populated).
+
+## Shared proposal base (21 November 2026)
+
+The remaining slices reuse one base. `management-proposals.ts` owns everything that is the same for every proposal: the conversation check, input validation, the redaction refusal, the 10-per-conversation cap, the turnless `daemon` approval, the 24-hour expiry (re-armed after a restart), the accept listener, receipts and the `management_applied` / `management_failed` audit events. Each kind (`ProposalKind`) supplies only its `propose_*` tool name and description, the `management_*` approval tool name, an input schema, `prepare` (validate against current state, build the stored payload and its card display; never writes) and `apply` (its own stale check, then the existing service).
+
+- Kinds are listed once in `tools/management.ts` (`PROPOSAL_KINDS`). Their tool names are `PROPOSAL_TOOLS` in `policy.ts`, which the classifier, the MCP allow-list and the runner gate all read; a test fails if the two lists drift or a kind is not offered over MCP as `read`.
+- The stored payload carries `proposedBy` and a `sentence` (`verb`, `name`) written by daemon code. The morning brief reads only that sentence, so a new kind needs no brief change. Proposals stored by 0.7.4 have no sentence and show as the generic approval line in a brief until they expire (24 hours).
+- Automations are the first kind (`management-automation.ts`), with unchanged behaviour: the existing proposal, gate, gateway and brief tests pass unchanged apart from the call shape.
+
+## Proactive and delivery room proposals (21 November 2026)
+
+`management-settings.ts` adds two kinds:
+- `propose_proactive` → `management_proactive`: one feature per proposal (`heartbeat`: enabled, everyMinutes, botId; `brief`: enabled, time, days; `reflection`: enabled, time, botId). Other fields are refused, including the heartbeat prompt and reflection limits, which stay on the settings pages. The merged value is validated with the setting's own schema at proposal time, and a no-op is refused.
+- `propose_delivery_room` → `management_delivery_room`: an existing non-`_` conversation, or `null` for the default bot's direct chat.
+- Stale check: the whole current value must equal the value when proposed (settings rows have an `updated_at`, but comparing values also covers a change made and undone). Apply re-checks a chosen bot or room still exists, then makes the same validated `setSetting` write and `setting_changed` audit event as `PUT /settings/:key`, with `by: proposal:<id>`. The heartbeat, brief and reflection schedulers read these settings live, so nothing reloads.
+- The card shows each changed value before and after, labelled by the daemon (for example "Interval: Every 180 minutes → Every 60 minutes"), so a heartbeat interval change is explicit before you accept it.
+- Desk: proposals other than automations share one card. The heading comes from the proposal sentence ("Bot proposes to change the scheduled checks"), and the before → after rows come from the payload. It offers Apply change and Ignore, and is read-only on a Limited device.
+- Help: a new `proposals` topic holds the proposal guidance (moved out of `proactive`, which was at the 12 KB topic limit). The handbook's topic-count cap went from 13 to 16. The 2 KB index limit, which bounds what reaches the prompt, is unchanged.
+
+Checks: `management-settings.test.ts` (propose, accept with audit, field and bot refusals, stale refusals, ignore, delivery room missing at apply); the gate test covers every `PROPOSAL_TOOLS` entry; the gateway test refuses a Limited device on both new approvals; desk card tests failed on the old card and pass now; `verify-rendered-acceptance.mjs proposal-settings` passes 8/8 (desktop and phone, light and dark, Full and Limited).
+
+## Room and direct chat proposals (21 November 2026)
+
+`management-rooms.ts` adds two kinds:
+- `propose_room` → `management_room`.
+  - `create`: name, members, optional lead. The room id is a slug of the name, with a random suffix if it is taken. Validation is `validateDeskRoom`, the same as the new-room sheet. Apply is `createDeskRoom`. An id taken between proposal and accept fails without writing.
+  - `update`: name, addMembers, removeMembers, leadBotId. Validation is `planRoomUpdate` and apply is `updateDeskRoom`.
+  - Stale check: name, lead and members must be unchanged.
+  - The card lists agents before and after, and warns how many enabled automations in that room run as a removed agent.
+- `propose_direct_chat` → `management_direct_chat`: refused if the bot already has a direct chat. Apply is `ensureDirectChat`, so accepting two cards still leaves one chat.
+- **Remove member** stays in, as the owner asked. The `PATCH /rooms/:id` logic moved out of `gateway.ts` into `roomcreation.ts` and gained `removeMembers` (see [room-creation.md](room-creation.md)). The route and proposals share one validator and writer. There's no desk control for removal yet.
+- **Desk:** the shared proposal card shows only the new value for something new (no "from"), and shows the payload's `notes`, such as the automation warning.
+
+Checks: `management-rooms.test.ts` (create, slug collision, update with add/remove/lead, lead and last-agent rules, direct chat and hidden-room refusals, automation warning, stale refusal, direct chat open and idempotence); a `gateway.test.ts` removal test that fails on the old route; the room and gateway suites and `node scripts/verify-room-membership.mjs` pass on the shared writer; `verify-rendered-acceptance.mjs proposal-rooms` 4/4.
+
+## Responsibility proposals (21 November 2026)
+
+`management-responsibilities.ts` adds `propose_responsibility` → `management_responsibility`:
+- **Creates paused.** It creates a standing responsibility, always paused, through `responsibilities.create` (the same path as the desk's create button). Turning it on stays a separate owner action in Automations.
+- **Source comes from the daemon.** The bot supplies name, conversation, sender, subject topic, question, and optionally the bot and resource. The binding and resource come from the daemon's configured source, never from the bot.
+- **Refusals.** It's refused when no source is connected, the resource isn't permitted, the bot isn't API/Ollama (investigations don't run on ACP), or the conversation doesn't contain the bot.
+- **Stale check.** If the connected source's binding changed between proposal and accept, it's refused.
+- **Production today:** `main.ts` constructs Responsibilities without a source adapter (OA-368 is synthetic only), so this proposal is always refused on a normal install, matching the desk's disabled create button. It becomes usable when a real mail source lands.
+- **Card:** the shared card lists name, trigger, question, bot, destination and source. Its note says it's created paused.
+
+Checks: `management-responsibilities.test.ts` covers accept creating a paused, source-bound responsibility with its audit event; the source, resource, runtime, conversation and email refusals; and a source change before accept. The gateway Limited-device test covers the approval type. There's no rendered check for this kind, because the rendered fixture has no source; it uses the shared card covered by `proposal-settings` and `proposal-rooms`.

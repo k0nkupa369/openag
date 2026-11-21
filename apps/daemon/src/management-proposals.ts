@@ -1,10 +1,10 @@
-import { z } from "zod";
+import type { z } from "zod";
 import type { Approval, Approvals } from "./approvals.js";
-import { AutomationError, getAutomation, previewAutomationChange, type Automation, type AutomationManager } from "./automations.js";
+import type { AutomationManager } from "./automations.js";
 import type { Db } from "./db/index.js";
 import type { Ledger, LedgerEvent } from "./ledger.js";
+import type { Responsibilities } from "./responsibilities.js";
 import { getDefaultRedactor } from "./redact.js";
-import { getBot, getRoom } from "./rooms.js";
 
 /**
  * Management proposals (OA-347, docs/notes/default-bot-management-design.md): the default bot proposes a configuration
@@ -12,96 +12,96 @@ import { getBot, getRoom } from "./rooms.js";
  * originating conversation; it never writes configuration and never waits. An accepted approval applies the STORED
  * payload through the same service the desk uses, after re-checking that the target has not changed since it was proposed.
  *
+ * Each kind of change (`ProposalKind`) supplies its input schema, the stored payload with what the card shows, and the
+ * apply step. Everything else is shared here: storing, the 24-hour expiry, the per-conversation cap, the redaction
+ * refusal, receipts, audit events and the accept listener.
+ *
  * The approval belongs to the daemon, not the proposing bot, so a proposal waiting for a day never makes that bot busy.
  * Like command review it has no receipt `start`: the receipt is finished on every path so nothing is left pending.
  */
 
-export const MANAGEMENT_AUTOMATION_TOOL = "management_automation";
 /** Marks approvals this module created. Bots cannot set it, so a lookalike tool name from elsewhere is never applied. */
 export const MANAGEMENT_PROPOSAL_SOURCE = "management-proposal";
-/** How each action reads in a sentence ("proposes to pause …"); shared by the tool reply and the morning brief. */
-export const PROPOSAL_ACTION_VERBS = { create: "create", update: "change", enable: "turn on", disable: "pause", delete: "delete" } as const;
 export const PROPOSAL_EXPIRY_MS = 24 * 60 * 60_000;
 const MAX_PENDING_PER_ROOM = 10;
 
-const field = { name: z.string().max(200).optional(), scheduleCron: z.string().max(200).optional(), tz: z.string().max(100).nullable().optional(),
-  roomId: z.string().max(200).optional(), botId: z.string().max(200).optional(), prompt: z.string().max(8000).optional(), allowApprovals: z.boolean().optional() };
-export const automationProposalSchema = z.object({
-  action: z.enum(["create", "update", "enable", "disable", "delete"]),
-  automationId: z.string().min(1).max(80).optional(),
-  ...field,
-}).strict();
-export type AutomationProposalInput = z.infer<typeof automationProposalSchema>;
-type Action = AutomationProposalInput["action"];
+/** What a kind needs from the daemon to check and apply a change. */
+export interface ManagementDeps { db: Db; ledger: Ledger; tz: string; automations: () => AutomationManager | undefined; responsibilities?: () => Responsibilities | undefined }
+export interface ProposalContext { botId: string; roomId: string }
 
-const displaySchema = z.object({
-  action: z.enum(["create", "update", "enable", "disable", "delete"]), name: z.string(), schedule: z.string().nullable(), timezone: z.string(),
-  nextRunAt: z.number().nullable(), room: z.string().nullable(), bot: z.string(), prompt: z.string(), allowApprovals: z.boolean(), enabled: z.boolean(),
-  changes: z.array(z.object({ field: z.string(), from: z.string(), to: z.string() }).strict()),
-}).strict();
-const payloadSchema = z.object({
-  action: z.enum(["create", "update", "enable", "disable", "delete"]),
-  automationId: z.string().nullable(),
-  /** The target's `updatedAt` when proposed; any later edit makes the proposal stale. */
-  base: z.number().nullable(),
-  change: z.record(z.string(), z.unknown()).nullable(),
-  proposedBy: z.string(),
-  display: displaySchema,
-}).strict();
-export type AutomationProposalDisplay = z.infer<typeof displaySchema>;
+/** A prepared proposal: the payload to store (including what the card shows) and how it reads in a sentence. */
+export interface PreparedProposal {
+  payload: Record<string, unknown>;
+  /** "pause automation", "turn on the morning brief": completes "proposes to …". */
+  verb: string;
+  /** The target's name, shown quoted after the verb; null when the verb says it all. */
+  name: string | null;
+}
+
+export interface ProposalKind<I = unknown> {
+  /** The bot-facing tool, `propose_<kind>`. */
+  tool: string;
+  /** The approval's tool name, `management_<kind>`; existing stored approvals are matched on it, so it never changes. */
+  approvalTool: string;
+  description: string;
+  input: z.ZodType<I>;
+  /** Validates against current state and builds the payload. Throws ProposalError to refuse. Never writes. */
+  prepare(deps: ManagementDeps, ctx: ProposalContext, input: I): PreparedProposal;
+  /**
+   * Applies a stored payload (everything but `proposedBy` and `sentence`), after its own stale check. Throws ProposalError
+   * to refuse; any other error is a failed save. Returns the receipt detail and the audit fields.
+   */
+  apply(deps: ManagementDeps, payload: Record<string, unknown>, by: string): { detail: string; audit: Record<string, unknown> };
+}
 
 export interface ProposalResult { status: "proposed"; proposalId: string; expiresAt: number; summary: string; note: string }
 
 export interface ManagementProposals {
-  proposeAutomation(ctx: { botId: string; roomId?: string }, input: AutomationProposalInput): ProposalResult;
+  propose(tool: string, ctx: { botId: string; roomId?: string }, input: unknown): ProposalResult;
   dispose(): void;
   idle(): Promise<void>;
 }
 
-export class ProposalError extends Error {}
+/** A refusal. `not-run` (the default) means nothing was attempted; `failed` means the save itself was refused. */
+export class ProposalError extends Error {
+  constructor(message: string, readonly outcome: "not-run" | "failed" = "not-run") { super(message); }
+}
 
-const SHOWN_FIELDS = ["name", "scheduleCron", "tz", "roomId", "botId", "prompt", "allowApprovals", "enabled"] as const;
-const shown = (a: Automation, key: (typeof SHOWN_FIELDS)[number]) => String(a[key] ?? "daemon default");
+/** "bot proposes to pause automation `Inbox check`" for the morning brief, or null when the payload is not a proposal sentence. */
+export function proposalBriefLine(payload: unknown, code: (text: string) => string): string | null {
+  const p = payload as { proposedBy?: unknown; sentence?: { verb?: unknown; name?: unknown } } | null;
+  const verb = p?.sentence?.verb, name = p?.sentence?.name;
+  if (typeof p?.proposedBy !== "string" || typeof verb !== "string" || (name !== null && typeof name !== "string")) return null;
+  return `${p.proposedBy} proposes to ${verb}${name === null ? "" : ` ${code(name)}`}`;
+}
 
-export function createManagementProposals(deps: {
-  db: Db; ledger: Ledger; approvals: Approvals; tz: string;
-  automations: () => AutomationManager | undefined;
-  expiryMs?: number;
-}): ManagementProposals {
+export function createManagementProposals(deps: ManagementDeps & { approvals: Approvals; kinds: readonly ProposalKind<any>[]; expiryMs?: number }): ManagementProposals {
   const expiryMs = deps.expiryMs ?? PROPOSAL_EXPIRY_MS;
+  const byTool = new Map(deps.kinds.map(k => [k.tool, k]));
+  const byApproval = new Map(deps.kinds.map(k => [k.approvalTool, k]));
   const timers = new Set<NodeJS.Timeout>(), running = new Set<Promise<void>>();
   let disposed = false;
-  const own = (approval: Approval | undefined): approval is Approval =>
-    approval !== undefined && approval.toolName === MANAGEMENT_AUTOMATION_TOOL && approval.source === MANAGEMENT_PROPOSAL_SOURCE && approval.turnId === null;
+  const kindOf = (approval: Approval | undefined) =>
+    approval !== undefined && approval.source === MANAGEMENT_PROPOSAL_SOURCE && approval.turnId === null ? byApproval.get(approval.toolName) : undefined;
   const audit = (action: string, fields: Record<string, unknown>) => deps.ledger.append("_system", "daemon", "config", { action, ...fields });
 
-  function apply(approval: Approval): void {
+  function apply(kind: ProposalKind<any>, approval: Approval): void {
     const finish = (outcome: "completed" | "failed" | "not-run", detail: string) => { try { deps.approvals.receipts.finish(approval.id, { outcome, detail }); } catch { /* the audit event still records it */ } };
     const refuse = (reason: string, outcome: "failed" | "not-run" = "not-run") => {
       finish(outcome, `Nothing was changed: ${reason}`);
       audit("management_failed", { approvalId: approval.id, reason });
     };
-    const parsed = payloadSchema.safeParse(approval.payload);
-    if (!parsed.success) return refuse("the stored proposal is invalid");
     // Redaction rewrites anything that looks like a secret, so a proposal that contains a marker is no longer what was proposed.
     if (JSON.stringify(approval.payload).includes("[REDACTED")) return refuse("the stored proposal was altered by redaction");
-    const manager = deps.automations();
-    if (!manager) return refuse("automations are unavailable");
-    const p = parsed.data, by = `proposal:${approval.id}`;
-    if (p.action !== "create") {
-      const current = p.automationId ? getAutomation(deps.db, p.automationId) : undefined;
-      if (!current) return refuse("the automation no longer exists");
-      if (current.updatedAt !== p.base) return refuse("the automation changed after this was proposed; ask for a new proposal");
-    }
+    if (typeof approval.payload !== "object" || approval.payload === null) return refuse("the stored proposal is invalid");
+    const { proposedBy: _by, sentence: _sentence, ...payload } = approval.payload as Record<string, unknown>;
     try {
-      let id = p.automationId;
-      if (p.action === "create") id = manager.create(p.change, by).automation.id;
-      else if (p.action === "delete") { if (!manager.remove(p.automationId!, by)) return refuse("the automation no longer exists"); }
-      else if (!manager.update(p.automationId!, p.change, by)) return refuse("the automation no longer exists");
-      finish("completed", `Automation "${p.display.name}" ${p.action === "create" ? "created" : p.action === "delete" ? "deleted" : p.action === "update" ? "updated" : `${p.action}d`}.`);
-      audit("management_applied", { approvalId: approval.id, target: "automation", change: p.action, id });
+      const done = kind.apply(deps, payload, `proposal:${approval.id}`);
+      finish("completed", done.detail);
+      audit("management_applied", { approvalId: approval.id, ...done.audit });
     } catch (err) {
-      refuse(err instanceof AutomationError ? err.message : "the change could not be saved", "failed");
+      if (err instanceof ProposalError) refuse(err.message, err.outcome);
+      else refuse("the change could not be saved", "failed");
     }
   }
 
@@ -110,9 +110,10 @@ export function createManagementProposals(deps: {
     const id = (event.payload as { approvalId?: unknown } | null)?.approvalId;
     if (typeof id !== "string") return;
     const approval = deps.approvals.get(id);
+    const kind = kindOf(approval);
     // Only an explicit accept applies anything. Ignore, respond and expiry never do.
-    if (!own(approval) || approval.status !== "accepted") return;
-    const job = Promise.resolve().then(() => apply(approval)).catch(() => undefined);
+    if (!kind || approval!.status !== "accepted") return;
+    const job = Promise.resolve().then(() => apply(kind, approval!)).catch(() => undefined);
     running.add(job); void job.then(() => running.delete(job));
   });
 
@@ -124,63 +125,32 @@ export function createManagementProposals(deps: {
   };
   // A proposal made before a restart keeps its row but lost its timer: expire it or re-arm it, so none is stranded.
   for (const approval of deps.approvals.listPending()) {
-    if (!own(approval)) continue;
+    if (!kindOf(approval)) continue;
     const left = approval.createdAt + expiryMs - Date.now();
     if (left <= 0) expire(approval.id); else arm(approval.id, left);
   }
 
-  function describe(action: Action, before: Automation | undefined, after: Automation): AutomationProposalDisplay {
-    const room = after.roomId ? getRoom(deps.db, after.roomId) : undefined;
-    let nextRunAt: number | null = null;
-    try { nextRunAt = after.scheduleCron && after.enabled ? deps.automations()?.previewSchedule({ scheduleCron: after.scheduleCron, tz: after.tz, outputMode: "room", enabled: true }).nextScheduledAt ?? null : null; }
-    catch { nextRunAt = null; }
-    const changes = before && action !== "delete" ? SHOWN_FIELDS.filter(key => shown(before, key) !== shown(after, key)).map(key => ({ field: key, from: shown(before, key), to: shown(after, key) })) : [];
-    return {
-      action, name: after.name, schedule: after.scheduleCron, timezone: after.tz ?? deps.tz, nextRunAt,
-      // A direct chat is named after its bot, so "Bot in Bot" would read oddly.
-      room: room ? (room.kind === "direct" ? "its direct chat" : room.name) : after.roomId, bot: getBot(deps.db, after.botId)?.name ?? after.botId, prompt: after.prompt,
-      allowApprovals: after.allowApprovals, enabled: after.enabled, changes,
-    };
-  }
-
   return {
-    proposeAutomation(ctx, input) {
+    propose(tool, ctx, input) {
       if (disposed) throw new ProposalError("the daemon is shutting down");
+      const kind = byTool.get(tool);
+      if (!kind) throw new ProposalError("unknown proposal");
       if (!ctx.roomId || ctx.roomId.startsWith("_")) throw new ProposalError("proposals need a conversation");
-      const { action, automationId, ...fields } = input;
-      const given = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
-      let current: Automation | undefined, change: Record<string, unknown> | null, after: Automation;
-      try {
-        if (action === "create") {
-          if (automationId) throw new ProposalError("automationId is only for changing an existing automation");
-          change = { ...given, botId: given.botId ?? ctx.botId, triggerKind: "cron", outputMode: "room", allowTools: false, allowApprovals: given.allowApprovals ?? false };
-          after = previewAutomationChange(deps.db, deps.tz, { kind: "create", input: change });
-        } else {
-          if (!automationId) throw new ProposalError("automationId is required");
-          current = getAutomation(deps.db, automationId);
-          if (!current) throw new ProposalError("automation not found");
-          if (current.triggerKind !== "cron" || current.outputMode !== "room") throw new ProposalError("only scheduled automations that post to a conversation can be changed this way; use the Automations page");
-          if (action !== "update" && Object.keys(given).length > 0) throw new ProposalError(`${action} takes only automationId`);
-          if (action === "update" && Object.keys(given).length === 0) throw new ProposalError("update needs at least one field to change");
-          change = action === "update" ? given : action === "delete" ? null : { enabled: action === "enable" };
-          after = action === "delete" ? current : previewAutomationChange(deps.db, deps.tz, { kind: "update", id: automationId, patch: change });
-        }
-      } catch (err) {
-        if (err instanceof AutomationError) throw new ProposalError(err.message);
-        throw err;
-      }
-      const payload = { action, automationId: automationId ?? null, base: current?.updatedAt ?? null, change, proposedBy: ctx.botId, display: describe(action, current, after) };
+      const parsed = kind.input.safeParse(input);
+      if (!parsed.success) throw new ProposalError(parsed.error.issues.map(i => `${i.path.join(".") || "input"}: ${i.message}`).join("; "));
+      const prepared = kind.prepare(deps, { botId: ctx.botId, roomId: ctx.roomId }, parsed.data);
+      const payload = { ...prepared.payload, proposedBy: ctx.botId, sentence: { verb: prepared.verb, name: prepared.name } };
       // The approval stores a redacted copy. If redaction would change it, what is applied would differ from what was reviewed.
-      if (JSON.stringify(getDefaultRedactor().redact(payload)) !== JSON.stringify(payload)) throw new ProposalError("a value looks like it contains a secret; automations must not carry secrets");
-      const pending = deps.approvals.listPending().filter(a => own(a) && a.roomId === ctx.roomId).length;
+      if (JSON.stringify(getDefaultRedactor().redact(payload)) !== JSON.stringify(payload)) throw new ProposalError("a value looks like it contains a secret; proposals must not carry secrets");
+      const pending = deps.approvals.listPending().filter(a => kindOf(a) && a.roomId === ctx.roomId).length;
       if (pending >= MAX_PENDING_PER_ROOM) throw new ProposalError("too many proposals are waiting in this conversation; the owner must decide or let them expire first");
       const { approvalId } = deps.approvals.request({
-        roomId: ctx.roomId, botId: "daemon", toolName: MANAGEMENT_AUTOMATION_TOOL, toolClass: "act-local", source: MANAGEMENT_PROPOSAL_SOURCE, payload,
+        roomId: ctx.roomId, botId: "daemon", toolName: kind.approvalTool, toolClass: "act-local", source: MANAGEMENT_PROPOSAL_SOURCE, payload,
       });
       arm(approvalId, expiryMs);
       return {
         status: "proposed", proposalId: approvalId, expiresAt: Date.now() + expiryMs,
-        summary: `Proposal to ${PROPOSAL_ACTION_VERBS[action]} automation "${after.name}".`,
+        summary: `Proposal to ${prepared.verb}${prepared.name === null ? "" : ` "${prepared.name}"`}.`,
         note: "Nothing has changed yet. The owner or a full-access device must accept the card in this conversation within 24 hours. Do not say the change is done.",
       };
     },

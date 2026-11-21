@@ -37,7 +37,7 @@ import { bodyLimit } from "hono/body-limit";
 import { WebSocket, WebSocketServer } from "ws";
 import { type Auth, createRateLimiter, isDeviceAccess, type Principal, TOO_MANY_PAIRING_CODES, tokenMatches } from "./auth.js";
 import { getDefaultBotId } from "./defaultbot.js";
-import { createDeskRoom, readRoomCreation, RoomCreationError } from "./roomcreation.js";
+import { createDeskRoom, readRoomCreation, RoomCreationError, roomUpdateSchema, updateDeskRoom } from "./roomcreation.js";
 import { createIngress } from "./ingress.js";
 import type { SlackChannel } from "./slack.js";
 import type { Backups } from "./backup.js";
@@ -784,40 +784,13 @@ export function createGateway(deps: GatewayDeps): Hono<AppEnv> {
     return c.json({ room: roomView(getRoom(db, room.id)!) });
   });
 
-  // Owner-only room details and additive membership; direct chats keep exactly one agent.
+  // Owner-only room details and membership (roomcreation.ts); direct chats keep exactly one agent.
   app.patch("/rooms/:id", async (c) => {
     if (c.get("principal").kind !== "owner") return c.json({ error: "owner token required" }, 403);
-    const parsed = z.object({
-      name: z.string().trim().min(1).max(80).refine(v => !/[\u0000-\u001f\u007f]/.test(v), "no control characters").optional(),
-      description: z.string().trim().max(500).refine(v => !/[\u0000-\u0008\u000b-\u001f\u007f]/.test(v), "no control characters").optional(),
-      leadBotId: z.string().min(1).max(64).optional(),
-      addMembers: z.array(z.string().min(1).max(64)).min(1).max(50).refine(ids => new Set(ids).size === ids.length, "duplicate member").optional(),
-    }).strict().safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success || Object.keys(parsed.data).length === 0) return c.json({ error: "name (1–80 chars), description (up to 500), leadBotId or addMembers required" }, 400);
-    const room = getRoom(db, c.req.param("id"));
-    if (!room || room.id.startsWith("_")) return c.json({ error: "room not found" }, 404);
-    const { name, description, leadBotId, addMembers = [] } = parsed.data;
-    if (addMembers.length && room.kind === "direct") return c.json({ error: "agents can only be added to named rooms" }, 400);
-    if (addMembers.some(id => !getBot(db, id))) return c.json({ error: "members must be known agent ids" }, 400);
-    const added = addMembers.filter(id => !room.members.includes(id));
-    if (added.length && room.members.length + added.length > 50) return c.json({ error: "a room can have at most 50 agents" }, 400);
-    if (leadBotId !== undefined && !room.members.includes(leadBotId)) return c.json({ error: "the lead must be a member of the room" }, 400);
-    const redact = getDefaultRedactor();
-    const next = { name: name === undefined ? room.name : redact.redactString(name), description: description === undefined ? room.description ?? "" : redact.redactString(description), leadBotId: leadBotId ?? room.leadBotId };
-    ledger.atomic(() => {
-      for (const id of added) addMember(db, room.id, id);
-      db.prepare("UPDATE rooms SET name = ?, description = ?, lead_bot_id = ? WHERE id = ?").run(next.name, next.description, next.leadBotId, room.id);
-      ledger.append("_system", "owner", "config", {
-        action: "room_updated",
-        roomId: room.id,
-        changed: [...(next.name !== room.name ? ["name"] : []), ...(next.description !== (room.description ?? "") ? ["description"] : []), ...(next.leadBotId !== room.leadBotId ? ["lead"] : []), ...(added.length ? ["members"] : [])],
-        ...(added.length ? { addedMembers: added } : {}),
-        ...(next.leadBotId !== room.leadBotId ? { lead: { from: room.leadBotId, to: next.leadBotId } } : {}),
-      });
-      // Visible in the room's own history so members can see who answers unmentioned messages now.
-      if (next.leadBotId !== room.leadBotId) ledger.append(room.id, "owner", "config", { action: "room_lead_changed", from: room.leadBotId, to: next.leadBotId });
-    });
-    return c.json({ room: roomView(getRoom(db, room.id)!) });
+    const parsed = roomUpdateSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success || Object.keys(parsed.data).length === 0) return c.json({ error: "name (1–80 chars), description (up to 500), leadBotId, addMembers or removeMembers required" }, 400);
+    try { return c.json({ room: roomView(updateDeskRoom(db, ledger, c.req.param("id"), parsed.data)) }); }
+    catch (error) { if (error instanceof RoomCreationError) return c.json({ error: error.message }, error.status); throw error; }
   });
 
   app.get("/rooms/:id", (c) => {
@@ -967,26 +940,24 @@ export function createGateway(deps: GatewayDeps): Hono<AppEnv> {
 
   app.get("/settings", (c) => {
     // The signaling topic is a secret: it is never listed (the owner creates it, invites carry it).
-    const all = listSettings(db);
-    return c.json({ settings: { ...all, skillLibrary: getDefaultRedactor().redact(all.skillLibrary), rtc: { ...all.rtc, topic: all.rtc.topic ? "(set)" : null } } });
+    // The ntfy topic is a secret too: anyone holding it receives alerts, even after their device is revoked.
+    const all = listSettings(db), owner = c.get("principal").kind === "owner";
+    return c.json({ settings: { ...all, skillLibrary: getDefaultRedactor().redact(all.skillLibrary), rtc: { ...all.rtc, topic: all.rtc.topic ? "(set)" : null },
+      push: owner ? all.push : { ...all.push, topic: all.push.topic ? "(set)" : null } } });
   });
 
   app.put("/settings/:key", async (c) => {
     const key = c.req.param("key");
     if (!isSettingKey(key)) return c.json({ error: "setting not found" }, 404);
-    // Where the agent's actions run (a hosted browser, a remote box) is the owner's call, not any paired device's.
-    if ((key === "profile" || key === "dictation" || key === "skillLibrary" || key === "computer" || key === "apps" || key === "slack" || key === "rtc" || key === "defaultBot" || key === "deliveryRoom" || key === "connectorSignIn") && c.get("principal").kind !== "owner") return c.json({ error: "owner token required" }, 403);
+    // Installation settings are the owner's call: a Limited device must not schedule unattended turns, redirect alerts or
+    // change backups, and nothing it set may outlive its revocation. Full devices act as the owner.
+    if (c.get("principal").kind !== "owner") return c.json({ error: "owner token required" }, 403);
     if (key === "skillLibrary") return c.json({ error: "Use the shared-library and per-agent assignment controls" }, 400);
     let body: unknown = await c.req.json().catch(() => undefined);
     // The listing masks the topic, so a round-tripped value keeps the stored one.
     if (key === "rtc" && body && typeof body === "object" && (body as { topic?: unknown }).topic === "(set)") body = { ...body, topic: getSetting(db, "rtc").topic };
     // A save that does not mention webPush (the ntfy form, an older desk) keeps it: PUT replaces the whole value.
     if (key === "push" && body && typeof body === "object" && (body as { webPush?: unknown }).webPush === undefined) body = { ...body, webPush: getSetting(db, "push").webPush };
-    // Web Push sends to every subscribed device and names a contact for the push services: owner or full device only.
-    if (key === "push" && body && typeof body === "object" && c.get("principal").kind !== "owner") {
-      const want = (body as { webPush?: unknown }).webPush, have = getSetting(db, "push").webPush;
-      if (JSON.stringify(want) !== JSON.stringify(have)) return c.json({ error: "owner token required" }, 403);
-    }
     if (key === "defaultBot") {
       const botId = (body as { botId?: unknown } | null | undefined)?.botId;
       if (typeof botId !== "string" || !getBot(db, botId)) return c.json({ error: "botId must name an existing bot" }, 400);
@@ -1613,6 +1584,7 @@ export function createGateway(deps: GatewayDeps): Hono<AppEnv> {
   const push = deps.push;
   if (push) {
     app.post("/push/topic", (c) => {
+      if (c.get("principal").kind !== "owner") return c.json({ error: "owner token required" }, 403);
       const topic = newPushTopic();
       const from = getSetting(db, "push");
       const to = setSetting(db, "push", { ...from, topic });
@@ -1627,6 +1599,7 @@ export function createGateway(deps: GatewayDeps): Hono<AppEnv> {
     });
 
     app.post("/push/test", async (c) => {
+      if (c.get("principal").kind !== "owner") return c.json({ error: "owner token required" }, 403);
       const st = push.status();
       if (!st.enabled || !st.configured) return c.json({ error: NOT_CONFIGURED_MSG }, 409);
       return c.json(await push.sendTest(), 200);
