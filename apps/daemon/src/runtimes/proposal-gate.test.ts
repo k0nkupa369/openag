@@ -61,3 +61,18 @@ test.each(["read-only", "full-access"] as PermissionPreset[])("the default bot p
   expect(pending[0]).toMatchObject({ toolName: "management_automation", source: "management-proposal", roomId: "main", botId: "daemon" });
   expect(listAutomations(db)).toHaveLength(0);
 });
+
+// The API runtime (Mastra) passes fields the model left out as explicit `undefined`; the stored snapshot is JSON, which drops them.
+test("an API-shaped call with undefined optional fields is not refused as a changed snapshot", async () => {
+  const ledger = createLedger(db), approvals = createApprovals(db, ledger), permissions = createPermissions(db, ledger, dir, approvals);
+  permissions.ensure("bot", "main");
+  const proposals = createManagementProposals({ db, ledger, approvals, tz: "UTC", automations: () => undefined, kinds: PROPOSAL_KINDS });
+  const first = createFirstPartyTools({ db, computer: { capabilities: () => ({ shell: false, view: "none", hosted: false }) } as never, pusher: { status: () => ({ configured: false, enabled: false }) } as never, proposals: () => proposals });
+  let outcome: ToolOutcome | undefined;
+  const runtime: BotRuntime = { async runTurn(ctx) { outcome = await ctx.callTool("propose_proactive", { feature: "brief", enabled: true, everyMinutes: undefined, time: "07:15", days: [1, 2, 3, 4, 5], botId: undefined }); } };
+  const runner = createRunner({ db, ledger, approvals, permissions, dataDir: dir, runtimes: { api: runtime, acp: runtime }, tools: defaultTools, dynamicTools: () => first.executors });
+  await runner.run(getRoom(db, "main")!, getBot(db, "bot")!, ledger.append("main", "user", "message", { text: "turn on the brief at 07:15 on weekdays" }));
+  proposals.dispose();
+  expect(outcome).toMatchObject({ ok: true, result: { status: "proposed" } });
+  expect(approvals.listPending()).toEqual([expect.objectContaining({ toolName: "management_proactive" })]);
+});

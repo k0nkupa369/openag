@@ -68,7 +68,7 @@ Other remaining gates:
 Not yet built.
 
 **Memory, models and routing**
-- OA-347 Default bot management tools ([default-bot-management-design.md](docs/notes/default-bot-management-design.md)). Every v1 proposal kind is built: automations (with real Claude/Codex journeys), and in 0.7.5 the shared base, heartbeat/brief/reflection, delivery room, rooms (including removing a member), direct chats and responsibilities, with controlled tests and rendered card checks. Remaining gate: one real Claude and one real Codex journey covering the new kinds. Responsibility proposals are refused until a mail source adapter exists (OA-368 is synthetic only).
+- OA-347 Default bot management tools ([default-bot-management-design.md](docs/notes/default-bot-management-design.md)). Every v1 proposal kind is built: automations (with real Claude/Codex journeys), and in 0.7.5 the shared base, heartbeat/brief/reflection, delivery room, rooms (including removing a member), direct chats and responsibilities, with controlled tests and rendered card checks. A real API default bot journey (gpt-6-luna) covered every kind in one conversation and found a snapshot-comparison bug for API tool calls, now fixed. Not yet run: real Claude/Codex journeys for the new kinds. Responsibility proposals are refused until a mail source adapter exists (OA-368 is synthetic only).
 
 **Channels and remote access**
 - WebRTC access cap (decision first): a device set to Full access is treated as the owner over WebRTC, while the WebRTC design keeps owner-only routes on LAN/Tailscale. Decide whether WebRTC peers are capped at Limited access ([webrtc.md](docs/notes/webrtc.md), Known limits).

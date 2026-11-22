@@ -2,6 +2,14 @@
 
 All notable changes to OpenAg are recorded here. Versions follow [Semantic Versioning](https://semver.org); before 1.0, minor versions may change interfaces.
 
+## 0.7.6
+
+### Default bot
+- Fixed: a default bot on a hosted API model (for example OpenAI) could not make proposals. The change was refused with "Execution arguments differ from the approved snapshot" whenever the model left out an optional field, so no card appeared. This affected automation proposals in 0.7.4 too.
+
+### Verification
+- `scripts/verify-management-proposals-api.mjs --authorized-api` runs every proposal type through an API default bot on a real model, in one conversation, on a temporary install.
+
 ## 0.7.5
 
 ### Default bot

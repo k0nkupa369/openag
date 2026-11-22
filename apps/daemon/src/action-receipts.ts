@@ -20,7 +20,8 @@ export class ActionFailure extends Error {
 export function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value ?? null);
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical((value as Record<string,unknown>)[key])}`).join(",")}}`;
+  // An undefined field is absent, as in the stored JSON snapshot: the API runtime passes omitted optional fields as undefined.
+  return `{${Object.keys(value).filter(key => (value as Record<string,unknown>)[key] !== undefined).sort().map(key => `${JSON.stringify(key)}:${canonical((value as Record<string,unknown>)[key])}`).join(",")}}`;
 }
 interface ReceiptRow {
   effect_scope_json:string|null;seq:number;id:string;approval_id:string|null;tool_class:string;inspection_epoch:number;permission_session_id:string|null;permission_revision:number|null;permission_json:string|null;review_version:string;room_id:string;bot_id:string;work_id:string|null;turn_id:string|null;tool_call_id:string|null;

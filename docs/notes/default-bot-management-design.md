@@ -164,3 +164,13 @@ Checks: `management-rooms.test.ts` (create, slug collision, update with add/remo
 - **Card:** the shared card lists name, trigger, question, bot, destination and source. Its note says it's created paused.
 
 Checks: `management-responsibilities.test.ts` covers accept creating a paused, source-bound responsibility with its audit event; the source, resource, runtime, conversation and email refusals; and a source change before accept. The gateway Limited-device test covers the approval type. There's no rendered check for this kind, because the rendered fixture has no source; it uses the shared card covered by `proposal-settings` and `proposal-rooms`.
+
+## API default bot real journey (22 November 2026)
+
+`OPENAI_API_KEY=... node scripts/verify-management-proposals-api.mjs --authorized-api` ran the real built daemon on a temporary data directory and port, with an API default bot on `openai/gpt-6-luna`. The live service and its data were not touched. Owner-token decisions only.
+
+In ONE conversation the bot was asked, in order, for: the morning brief at 07:15 on weekdays, a room "Launch plan" (coder and writer, writer as lead), proactive messages to that room, removing coder from it, a direct chat with coder, and an automation. Every request produced exactly one `daemon`-owned, turnless card of the right kind (`management_proactive`, `management_room`, `management_delivery_room`, `management_room`, `management_direct_chat`, `management_automation`). Each card was accepted, and the change was confirmed through the API (`GET /settings`, `GET /rooms`, `GET /automations`). A standing responsibility was then refused ("no mail source is connected") with nothing pending. 16 model calls, about 113k input and 870 output tokens.
+
+**Bug found and fixed.** The first run refused `propose_proactive` with "Execution arguments differ from the approved snapshot". The API runtime (Mastra) passes fields the model left out as explicit `undefined`. `canonical()` (`action-receipts.ts`) turned those into `null`, but the stored receipt snapshot is JSON, which drops them, so the runner's pre-dispatch comparison never matched. `canonical()` now skips undefined fields. The regression test in `runtimes/proposal-gate.test.ts` failed before and passes after. Automation proposals from an API default bot share this path, so they were likely refused too in 0.7.4 and 0.7.5 (inferred: the earlier real journeys used ACP bots, and the live install has no `propose_*` calls).
+
+Not covered: real Claude/Codex (ACP) journeys for the newer kinds, and a Limited device through a real phone.
