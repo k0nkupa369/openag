@@ -37,11 +37,18 @@
       "docs/notes/conversation-model.md",
       "docs/notes/provider-routing.md",
       "docs/notes/hosted-context.md",
-      "docs/notes/hosted-outcomes.md",
-      "docs/notes/model-retries.md",
       "docs/notes/chat-history.md",
       "docs/notes/request-provenance.md",
       "docs/notes/chat-interactions.md"
+    ]
+  },
+  {
+    "slug": "model-requests",
+    "title": "Model requests",
+    "summary": "Model step limits, Incomplete results and automatic retries for API and Ollama turns.",
+    "sources": [
+      "docs/notes/hosted-outcomes.md",
+      "docs/notes/model-retries.md"
     ]
   },
   {
@@ -115,11 +122,19 @@
     ]
   },
   {
-    "slug": "computer-connectors",
-    "title": "Computer and integrations",
-    "summary": "Computer control, human takeover, connectors and administrator setup.",
+    "slug": "computer",
+    "title": "Computer",
+    "summary": "Managed computer control, backends, human takeover and status refresh.",
     "sources": [
       "docs/notes/cua.md",
+      "apps/daemon/src/capabilities.ts"
+    ]
+  },
+  {
+    "slug": "computer-connectors",
+    "title": "Integrations",
+    "summary": "App library, connectors, MCP servers, Composio and administrator setup.",
+    "sources": [
       "docs/apps.md",
       "apps/daemon/src/mcp.ts",
       "apps/daemon/src/capabilities.ts",

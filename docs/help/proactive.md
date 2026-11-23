@@ -20,7 +20,7 @@ openag_status reports whether heartbeat, reflection and the brief are enabled, n
 
 Automations has schedules and supported external triggers. Cron is five-field with a minimum interval and overlap safeguards. Webhook-style events are verified before processing. GitHub polling uses outbound requests; Slack and webhook integrations have their own setup and restrictions. Triggered runs are unattended and generally isolated; they do not acquire action authority from event text.
 
-The default bot can propose automation, schedule, brief, reflection and message destination changes as cards you accept in the conversation; see the proposals topic.
+The default bot can propose automation, schedule, brief, reflection and message destination changes as cards you accept in the conversation; see the `proposals` help topic.
 
 Web Push sends the same short, end-to-end encrypted messages to the installed desk. The owner or a Full device turns on "Web Push for this OpenAg" in Settings → Proactive → Notifications with a mailto: or https: contact. On each device, Turn on for this device asks the browser for permission. It needs HTTPS (for example Tailscale Serve) or the same computer; iPhone and iPad need the Home Screen app. A click opens the approval or conversation. Removing a device stops its notifications; ntfy keeps working alongside it.
 

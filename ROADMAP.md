@@ -84,7 +84,7 @@ Ideas kept out of scope on purpose:
 - Public App marketplace and code signing.
 - Replacing the ACP CLIs with a custom agent loop.
 - Making Composio a required dependency.
-- Split `docs/help/proactive.md`: it is within a few bytes of the 12 KB `HELP_TOPIC_MAX`, so the next proactive help change will fail the build.
+- Help topic room: every topic must stay under the 12 KB `HELP_TOPIC_MAX`, and the handbook allows 16 topics, all now used. The next topic that fills up needs the topic limit raised (the 2 KB index limit, 1.8 KB used, is what bounds the prompt) or content moved to an existing topic.
 - Proactive pings that bypass the wake filter.
 - A second SQLite database or a client-side database. The daemon owns the only one.
 

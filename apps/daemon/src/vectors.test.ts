@@ -1,3 +1,6 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -276,5 +279,23 @@ describe("ollama embedder", () => {
       }) as unknown as typeof fetch,
     });
     await expect(e.embed(["a"])).rejects.toThrow("embedding failed: timeout");
+  });
+
+  test("a refused connection says Ollama is not reachable", async () => {
+    // A port that was just freed, so nothing listens on it.
+    const server = createServer().listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const { port } = server.address() as AddressInfo;
+    await new Promise(resolve => server.close(resolve));
+    const e = createOllamaEmbedder({ model: "x", baseUrl: `http://127.0.0.1:${port}` });
+    await expect(e.embed(["a"])).rejects.toThrow(`embedding failed: Ollama is not reachable at http://127.0.0.1:${port} (ECONNREFUSED)`);
+  });
+
+  test("a dropped connection is not reported as unreachable", async () => {
+    const e = createOllamaEmbedder({
+      model: "x",
+      fetch: (async () => { throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } }); }) as unknown as typeof fetch,
+    });
+    await expect(e.embed(["a"])).rejects.toThrow("embedding failed: request failed (ECONNRESET)");
   });
 });

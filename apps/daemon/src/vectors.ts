@@ -21,10 +21,18 @@ function unit(v: number[]): number[] {
   return v.map((x) => x / norm);
 }
 
+/** Connection errors that mean nothing answered at the configured address, as opposed to a dropped connection. */
+const UNREACHABLE = new Set(["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN"]);
+
 /** Short, input-free reason for a failed request. */
-function fetchReason(err: unknown): string {
+function fetchReason(err: unknown, baseUrl: string): string {
   const name = (err as { name?: unknown })?.name;
-  return name === "TimeoutError" || name === "AbortError" ? "timeout" : "request failed";
+  if (name === "TimeoutError" || name === "AbortError") return "timeout";
+  const code = (err as { cause?: { code?: unknown } })?.cause?.code;
+  if (typeof code !== "string" || !/^E[A-Z_]+$/.test(code)) return "request failed";
+  if (!UNREACHABLE.has(code)) return `request failed (${code})`;
+  // Origin only: a configured URL may carry credentials or a path.
+  try { return `Ollama is not reachable at ${new URL(baseUrl).origin} (${code})`; } catch { return `Ollama is not reachable (${code})`; }
 }
 
 export function createOllamaEmbedder(opts: {
@@ -50,7 +58,7 @@ export function createOllamaEmbedder(opts: {
           signal: AbortSignal.timeout(timeoutMs),
         });
       } catch (err) {
-        throw new Error(`embedding failed: ${fetchReason(err)}`);
+        throw new Error(`embedding failed: ${fetchReason(err, baseUrl)}`);
       }
       if (!res.ok) throw new Error(`embedding failed: HTTP ${res.status}`);
       let body: unknown;

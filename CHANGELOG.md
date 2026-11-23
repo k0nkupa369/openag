@@ -2,6 +2,20 @@
 
 All notable changes to OpenAg are recorded here. Versions follow [Semantic Versioning](https://semver.org); before 1.0, minor versions may change interfaces.
 
+## 0.7.7
+
+### Default bot help
+- Computer control and model-request limits each have their own help topic (`computer`, `model-requests`), which leaves room in the two topics that were full. The computer and integrations topic is now titled Integrations; its id is unchanged.
+- The `openag_help` tool lists every installed help topic. It used to name only 8, so bots other than the default could miss the rest.
+- Help topics refer to each other by topic id, so a bot that follows a pointer finds the topic.
+
+### Memory
+- When Ollama is not running, the service log says `Ollama is not reachable at <address> (ECONNREFUSED)` instead of `request failed`. Other connection errors keep their code.
+
+### Verification
+- `scripts/verify-daemon-shutdown.mjs` works again. It waited for a `0.0.0.0` address, but the daemon has listened on `127.0.0.1` by default since that changed.
+- `scripts/verify-bot-knowledge.mjs` checks that `openag_help` lists exactly the installed topics and that every help cross-reference names a real topic.
+
 ## 0.7.6
 
 ### Default bot

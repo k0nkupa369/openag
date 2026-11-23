@@ -1,21 +1,15 @@
-# Computer and integrations
+# Integrations
 
 Use App library to discover integrations, review requirements and start setup. Added integrations link to their selected details in Settings, Connectors, which owns ongoing account and runtime management. Manage connections, Refresh status, Reload app folders and Reconnect all MCP are above the catalogue. Selected integration URLs survive refresh; old App library and Connectors list URLs remain valid. A configured or detected integration may still need access or setup.
 
 The library groups Apple apps, local apps and Composio under Apps, and configured MCP servers under MCP servers. Search by name or purpose, then select a compact listing to see its description, tools and setup. Gmail and Google Drive are not listed in the desk. The global MCP reconnect still affects every configured MCP connection, including Apple apps and Composio.
 
 
-Computer opens the managed-computer controls. The default backend is Cua; optional backends depend on administrator configuration. A configured backend is not proof a session is running. "cua is not installed": install the Cua CLI there or pick another backend. Shell availability varies by backend.
-
-Computer actions share a lock. Human takeover pauses bot input while screenshots remain available. Computer shell is an external action. Clicking a submit button cannot reliably be detected from pixels, so input actions ask by default. Do not recommend making all input automatic as a way around action review.
-
-Connectors and App library expose integration setup and installed capabilities. MCP servers are configured in the daemon data directory's mcp.json. The owner manages custom remote servers from Settings, Connectors; the MCP servers topic explains how. Enabled apps are owner-reviewed, integrity checked and run through the normal tool gate. A remote server's header may not reference the daemon's own secrets (its owner token, API keys or channel credentials); the administrator gives that server a separate variable of its own, and a server that refers to a protected one shows "header references a daemon secret". Credentials remain administrator-managed.
+Connectors and App library expose integration setup and installed capabilities. MCP servers are configured in the daemon data directory's mcp.json. The owner manages custom remote servers from Settings, Connectors; the `mcp-servers` help topic explains how. Enabled apps are owner-reviewed, integrity checked and run through the normal tool gate. A remote server's header may not reference the daemon's own secrets (its owner token, API keys or channel credentials); the administrator gives that server a separate variable of its own, and a server that refers to a protected one shows "header references a daemon secret". Credentials remain administrator-managed.
 
 An integration may ask for your input again during a later call in the same conversation. Each response applies only to its own running call. OpenAg renews the capability handshake where the server does not retain an MCP session; it does not reconnect your provider account or replay a failed action. Keep provider permission controls enabled. Writes and unknown tools still require action review. See docs/notes/mcp-lifecycle.md for session and interaction behavior.
 
 Available integration tools depend on actual installation and configuration. Handbook coverage does not mean a connector is installed, authenticated or working. Neither openag_help nor openag_status installs apps, launches computers, reads credentials, or performs integration actions. New capabilities and their external effects require the applicable authorization.
-
-The capability catalogue reads a passive computer snapshot. It reports not_observed before the first observation, or the last observed lifecycle state with its timestamp. Busy, human_control and backend_switch_pending describe current local restrictions. Reading this catalogue never probes a backend, starts a computer, applies a pending backend switch or releases a hosted session. Shell support is backend-specific; screenshots remain separate from human input control. Configuration and permissions are reported separately, and execution rechecks them.
 
 
 Apple apps, Gmail and Google Drive have read/search connector implementations. Apple uses a pinned local MCP facade (the pin identifies the reviewed code by digest; the daemon chooses how to launch it, so redeploying a new release or node does not require re-running setup); Gmail/Drive use one daemon-owned Google account with separate service pause controls. No send, edit, share or delete tools are offered by these connectors. Read tools still use the normal policy gate; offline turns cannot use Google reads. The capability catalogue currently covers search/computer/notifications, not integration account status.
@@ -32,7 +26,6 @@ MCP tools use the same classification and receipt rules across integrations. Adm
 
 Remote integrations can request explicit form or URL input during a call. Review these directly in the originating conversation. Integration Overview reports task-only or unsupported-schema tools as unavailable. See Approvals and permissions and docs/notes/mcp-lifecycle.md; connecting, supplying input and approving an action remain separate.
 
-Computer has Refresh status in the full page and conversation panel. Unknown or unreadable status requires another status check and, if unresolved, inspection on the OpenAg machine. It is not evidence that the computer is absent. Refresh never creates, destroys or switches the computer, or releases a hosted session. An explicit backend selection is separate; if busy or human control blocks it, wait and use Apply selected backend. See [status inspection and recovery](../notes/cua.md).
 
 Integration input requests use shared labelled fields and checkbox groups for multiple choices. Optional values remain unset until selected; Yes and No are distinct choices. Responding remains separate from tool approval. See `docs/notes/mcp-lifecycle.md`.
 

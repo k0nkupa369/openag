@@ -5,7 +5,7 @@ Start with the guide for your task. Behavior notes describe the implementation; 
 ## Using OpenAg
 
 - [Quick start and project overview](../README.md)
-- [Delivered bot handbook](help/overview.md): [chats](help/conversations.md), [rooms](help/room-creation.md), [agents/models](help/bots-models.md), [permissions](help/approvals.md), [Work](help/work.md), [memory/skills](help/memory-skills.md), [automations](help/proactive.md), [computer/connectors](help/computer-connectors.md), [dictation](help/dictation.md)
+- [Delivered bot handbook](help/overview.md): [chats](help/conversations.md), [rooms](help/room-creation.md), [agents/models](help/bots-models.md), [permissions](help/approvals.md), [Work](help/work.md), [memory/skills](help/memory-skills.md), [automations](help/proactive.md), [computer](help/computer.md), [integrations](help/computer-connectors.md), [model requests](help/model-requests.md), [dictation](help/dictation.md)
 - [Product concepts and scope](openag.md)
 - [Owner access and recovery](notes/owner-access.md), [device access](notes/devices.md)
 

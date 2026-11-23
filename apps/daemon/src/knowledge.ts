@@ -42,6 +42,7 @@ export function loadKnowledge(path: URL) {
   }
   return {
     index,
+    slugs: () => topics.map(t => t.slug),
     load(slug: string) {
       if (!version) return { found: false, unavailable: true, reason: "Installed handbook unavailable", version: null };
       const found = topics.find(t => t.slug === slug);
