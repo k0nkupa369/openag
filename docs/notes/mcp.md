@@ -27,6 +27,7 @@ Verified against `@modelcontextprotocol/sdk@1.32.2` type definitions in `apps/da
 ## Operational rules implemented
 
 - Config file: `$OPENAG_DATA/mcp.json` only. The owner (and a Full device) can add, edit, switch and remove CUSTOM servers through the management routes below (ADR 0003); built-in and managed connections cannot be written that way, and no other caller can write the file.
+- Input schemas: a tool's JSON Schema is converted with `z.fromJSONSchema` and marked `externalSchema`. API agents send it to the provider as written (`strict: false`), because OpenAI strict mode cannot express a free-form object and Mastra's rewrite reduced, for example, Notion's page `properties` record to `{}` (24 Nov: title updates sent empty properties in a loop). First-party tools stay strict. Arguments are still validated against the converted schema before the gate.
 - Permissions: the file must be owned by the daemon user and not group- or world-writable. Otherwise nothing loads and status reports `refused`.
   Operator should run `chmod 600 $OPENAG_DATA/mcp.json`.
 - stdio child env: ONLY `PATH`, `HOME`, `LANG`, `TMPDIR` from the daemon, plus the server's resolved `env`. The daemon's full environment is never passed (it holds `OPENAG_TOKEN` and API keys).

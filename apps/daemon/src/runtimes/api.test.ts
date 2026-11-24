@@ -278,3 +278,25 @@ test("an MCP tool found through search is offered on the next step", async () =>
   expect(seen[0]).not.toContain("mcp_notion_notion-memory-search");
   expect(seen[1]).toContain("mcp_notion_notion-memory-search");
 });
+
+test("an MCP tool's free-form object reaches an OpenAI model as written", async () => {
+  let sent: { name: string; inputSchema: unknown; strict?: boolean }[] = [];
+  const model = new MockLanguageModelV3({
+    provider: "openai.responses", modelId: "gpt-6-luna",
+    doGenerate: async (params) => {
+      sent = (params.tools ?? []) as typeof sent;
+      return { content: [{ type: "text" as const, text: "ok" }], finishReason: { unified: "stop" as const, raw: "stop" }, usage, warnings: [] };
+    },
+  });
+  // Notion's update-page takes `properties` as a record. OpenAI strict mode cannot express one, and the strict rewrite left the model able to send only {}.
+  const input = z.fromJSONSchema({ type: "object", required: ["page_id"], properties: { page_id: { type: "string" }, properties: { type: "object", additionalProperties: { type: "string" } } } });
+  const update: ToolDef = { name: "mcp.notion.notion-update-page", class: "act-external", description: "Update a Notion page.", input, externalSchema: true, async execute() { return {}; } };
+  const ledger = createLedger(db);
+  const approvals = createApprovals(db, ledger);
+  const runner = createRunner({ db, ledger, approvals, dataDir: dir, tools: defaultTools,
+    runtimes: { api: createApiRuntime({ model: asRuntimeModel(model), tools: [update], directTools: new Set(["mcp.notion.notion-update-page"]) }) } });
+  await runner.run(getRoom(db, "main")!, getBot(db, "boss")!, ledger.append("main", "user", "message", { text: "rename the page" }));
+  const tool = sent.find((t) => t.name === "mcp_notion_notion-update-page")!;
+  expect((tool.inputSchema as { properties: { properties: { additionalProperties: unknown } } }).properties.properties.additionalProperties).toEqual({ type: "string" });
+  expect(tool.strict).toBe(false);
+});

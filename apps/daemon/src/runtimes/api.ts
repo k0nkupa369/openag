@@ -45,6 +45,8 @@ export function buildMastraTools(ctx: Pick<TurnContext, "callTool"|"state"|"save
       id: def.name,
       description: def.description,
       inputSchema: def.input,
+      // OpenAI strict mode cannot express a free-form object (such as Notion's page properties); Mastra's rewrite would leave only {}.
+      ...(def.externalSchema ? { strict: false } : {}),
       execute: async (input) => modelToolResult(ctx, await ctx.callTool(def.name, input)),
     });
   }

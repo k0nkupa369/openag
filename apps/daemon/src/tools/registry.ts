@@ -63,6 +63,8 @@ export interface ToolDef<I = any> {
   class: ToolClass;
   description: string;
   input: z.ZodType<I>;
+  /** The schema comes from an outside server (MCP): send it as written, not rewritten for a provider's strict mode. */
+  externalSchema?: boolean;
   enabled?(): boolean;
   capability?: { family: CapabilityFamily; availability(): ToolAvailability };
   permission?: (ctx: ToolExecContext, args: any) => PermissionRequirement;

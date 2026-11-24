@@ -662,6 +662,7 @@ export function createMcpManager(opts: McpManagerOptions): McpManager {
         class: override ?? "act-external",
         description: `[MCP ${entry.id}; class ${override ?? "act-external"}] ${(tool.description ?? "").slice(0, 300)}${entry.id===COMPOSIO_SERVER_ID&&remoteName==="COMPOSIO_MULTI_EXECUTE_TOOL"?" Confined modes support only daemon-reviewed read batches (OUTLOOK_GET_PROFILE, OUTLOOK_QUERY_EMAILS), with sync_response_to_workbench false. Other operations require Full access.":""}`,
         input,
+        externalSchema: true,
         editable: false,
         // `offerToAgents` off keeps the tool out of every runtime's offered list and makes its executor refuse, not only ACP's.
         enabled: () => live() && entry.offerToAgents,

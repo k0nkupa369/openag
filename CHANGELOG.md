@@ -2,6 +2,11 @@
 
 All notable changes to OpenAg are recorded here. Versions follow [Semantic Versioning](https://semver.org); before 1.0, minor versions may change interfaces.
 
+## 0.7.10
+
+### MCP servers
+- Fixed: agents on hosted OpenAI models could not set Notion page properties such as the title. Strict tool mode rewrote free-form objects in MCP tool inputs to an empty object, so the model could only send `{}`. MCP tool inputs are now sent as the server wrote them; OpenAg's own tools stay strict, and every call still goes through the same checks and approval gate.
+
 ## 0.7.9
 
 ### MCP servers
