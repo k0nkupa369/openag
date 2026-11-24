@@ -274,6 +274,14 @@ describe("manager with in-memory servers", () => {
     expect(classify("mcp.fake.slow")).toBe("act-external");
   });
 
+  test("a server's tools list offers only the named remote tools", async () => {
+    writeConfig({ servers: [fakeEntry({ tools: ["echo", "read_file"] })] });
+    const m = manager(harness());
+    await m.load();
+    expect(m.toolDefs().map((d) => d.name).sort()).toEqual(["mcp.fake.echo", "mcp.fake.read_file"]);
+    expect(m.status().find((s) => s.id === "fake")?.toolCount).toBe(2);
+  });
+
   test("setAdminToolClasses cannot override a built-in tool name", () => {
     setAdminToolClasses({ read_file: "act-external", "mcp.x.y": "search" });
     expect(classify("read_file")).toBe("read");

@@ -98,6 +98,8 @@ export interface McpEntryView {
   headers?: { name: string; template: string }[];
   /** OAuth sign-in settings (OA-457). */
   oauth?: { scope?: string; clientMetadataUrl?: string };
+  /** Only these remote tool names are offered; absent means every tool. */
+  tools?: string[];
   /** A local command written from the desk (OA-456): reviewed before it runs. Operator-written commands have none of these. */
   managedBy?: "desk";
   command?: string;
@@ -159,6 +161,8 @@ const common = {
   timeoutMs: z.number().int().min(1000).max(120000).default(DEFAULT_TIMEOUT_MS),
   toolClasses: toolClassesSchema.default({}),
   offerToAgents: z.boolean().default(true),
+  /** When set, only these remote tool names are offered; every other tool on the server stays hidden. */
+  tools: z.array(z.string().min(1).max(200)).max(200).optional(),
 };
 const entrySchema = z.discriminatedUnion("transport", [
   z.object({
@@ -625,7 +629,7 @@ export function createMcpManager(opts: McpManagerOptions): McpManager {
     const overrides: Record<string, ToolClass> = {};
     const connected = () => { recheckPackage(record); return record.handle === handle && (entry.id !== COMPOSIO_SERVER_ID || opts.composio?.enabled() === true); };
     const live = () => connected() && record.state === "connected" && record.defs === defs;
-    for (const tool of tools) {
+    for (const tool of tools.filter(tool => !entry.tools || entry.tools.includes(tool.name))) {
       const base = sanitizeToolName(tool.name);
       let local = base;
       for (let n = 2; used.has(local); n++) local = `${base}_${n}`;
@@ -815,6 +819,7 @@ export function createMcpManager(opts: McpManagerOptions): McpManager {
           id: raw.id, origin: raw.openagPackage ? "builtin" : "custom", transport: http ? "http" : "stdio",
           enabled: raw.enabled !== false, offerToAgents: raw.offerToAgents !== false,
           timeoutMs: typeof raw.timeoutMs === "number" ? raw.timeoutMs : DEFAULT_TIMEOUT_MS,
+          ...(Array.isArray(raw.tools) ? { tools: raw.tools.filter((name): name is string => typeof name === "string") } : {}),
           ...(http ? { url: typeof raw.url === "string" ? raw.url : "", allowPrivateNetwork: raw.allowPrivateNetwork === true, ...(headers ? { headers } : {}), ...(raw.oauth && typeof raw.oauth === "object" ? { oauth: raw.oauth as { scope?: string; clientMetadataUrl?: string } } : {}) } : {}),
         };
       }).filter((view): view is McpEntryView => view !== undefined);

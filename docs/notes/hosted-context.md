@@ -14,7 +14,7 @@ History has a durable upper anchor captured when the turn starts. Approval recov
 
 ## Text admission and failure
 
-The declared instructions, current request, current attachment text and offered tool schemas share a 64,000-character admission ceiling. Optional older history and supporting data use the remaining space. Data fields are shortened before JSON serialization; serialized JSON is never cut. This bounds application text, not provider tokens, image capacity or model context size.
+The declared instructions, current request, current attachment text and offered tool schemas share a 64,000-character admission ceiling. An isolated turn (proactive assessment, hook or wake-watcher run) offers no tool schemas, because its gate refuses every call; before 24 Nov 2026 it sent all of them, and on an install with about 75 tools a 9.5k-character Outlook assessment exceeded the ceiling. Optional older history and supporting data use the remaining space. Data fields are shortened before JSON serialization; serialized JSON is never cut. This bounds application text, not provider tokens, image capacity or model context size.
 
 If required input cannot fit, the turn records a bounded context_limit failure before a model request or tool execution. Admission also precedes vector-recall embedding. Ollama checks admission before capability/thinking probes too. The current slice uses the existing failed outcome; typed incomplete reasons are OA-370. A provider may still reject input because its actual capacity is smaller; this feature does not retry or imply success.
 

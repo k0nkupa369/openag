@@ -8,8 +8,9 @@ import { INVALID_MODEL_OVERRIDE, modelOverride, modelConfig, modelTarget, provid
 import { attachmentText, apiImageInput } from "../attachment-prompt.js";
 import { Agent, type AgentExecutionOptionsBase } from "@mastra/core/agent";
 import { createTool } from "@mastra/core/tools";
+import { z } from "zod";
 import { defaultToolDefs } from "../tools/index.js";
-import { enabledTools, toolSchema, type ToolDef } from "../tools/registry.js";
+import { enabledTools, toolSchema, turnTools, type ToolDef } from "../tools/registry.js";
 import { isOllamaBot } from "./ollama.js";
 import type { BotRuntime, TurnContext } from "./types.js";
 
@@ -29,7 +30,12 @@ export interface ApiRuntimeOptions {
   toolDefs?: () => ToolDef[];
   /** Runs bots whose model is `ollama/<name>` (local chat models). */
   ollama?: BotRuntime;
+  /** Tools sent with every request; the rest are found through tool search. Defaults to DIRECT_TOOLS. */
+  directTools?: ReadonlySet<string>;
 }
+
+/** The most used tools stay in every request; other tools (and every MCP tool) are found through search, then called through the same gate. */
+export const DIRECT_TOOLS: ReadonlySet<string> = new Set(["read_file","list_files","search_files","write_file","run_shell","request_input","openag_help","openag_status","openag_capabilities","memory_append","skill_list","skill_load","agent_list","agent_consult","investigation_read"]);
 
 /** Mastra adapters for enabled tools. Execution and approval stay behind ctx.callTool. */
 export function buildMastraTools(ctx: Pick<TurnContext, "callTool"|"state"|"saveState">, defs: ToolDef[]) {
@@ -43,6 +49,34 @@ export function buildMastraTools(ctx: Pick<TurnContext, "callTool"|"state"|"save
     });
   }
   return tools;
+}
+
+const words = (text: string) => text.toLowerCase().split(/[^a-z0-9]+/).filter(word => word.length > 1);
+
+/**
+ * Every tool stays registered (same schemas, same gate); each model step sends only the direct tools, tool_search and the
+ * tools search has loaded in this turn. Loaded tools last only for this turn.
+ */
+function toolSearch(tools: ReturnType<typeof buildMastraTools>, defs: ToolDef[], direct: ReadonlySet<string>) {
+  const deferred = defs.filter(def => !direct.has(def.name) && tools[def.name]);
+  const loaded = new Set<string>();
+  const search = createTool({
+    id: "tool_search",
+    description: `Load more tools by keyword; matches become callable on your next step. Loadable tools: ${deferred.map(def => def.name).join(", ")}.`,
+    inputSchema: z.object({ query: z.string().min(1).max(200) }),
+    execute: async ({ query }) => {
+      const terms = words(query);
+      const matches = deferred.map(def => {
+        const name = words(def.name), text = words(def.description);
+        return { def, score: terms.reduce((sum, term) => sum + (name.includes(term) ? 3 : 0) + (text.includes(term) ? 1 : 0), 0) };
+      }).filter(match => match.score > 0).sort((a, b) => b.score - a.score).slice(0, 5);
+      for (const { def } of matches) loaded.add(def.name);
+      return { tools: matches.map(({ def }) => ({ name: def.name, description: def.description.split(/(?<=\.)\s/)[0] })) };
+    },
+  });
+  const all = { ...tools, ...(deferred.length ? { tool_search: search } : {}) };
+  const active = () => Object.keys(all).filter(name => direct.has(name) || name === "tool_search" || loaded.has(name));
+  return { tools: all, active };
 }
 
 function resolveModel(ctx: TurnContext, override?: AgentModel): AgentModel {
@@ -71,10 +105,10 @@ export function createApiRuntime(opts: ApiRuntimeOptions = {}): BotRuntime {
       const model = resolveModel(ctx, opts.model);
       const requestModelName=typeof model==='string'?model:typeof model==='object'&&model!==null&&'modelId' in model&&typeof model.modelId==='string'?model.modelId:ctx.bot.model??'configured-model';
       ctx.signal?.throwIfAborted();
-      const defs=enabledTools([...(opts.tools??defaultToolDefs),...(opts.toolDefs?.()??[])]).filter(def=>ctx.investigation?def.name==='investigation_read':def.name!=='investigation_read');
+      const defs=turnTools([...(opts.tools??defaultToolDefs),...(opts.toolDefs?.()??[])],ctx);
       const capabilities=opts.capabilities?.(typeof model==='string'?model:ctx.bot.model??'');
       const images=(ctx.attachments??[]).filter(file=>file.data&&apiImageInput(capabilities,file.mimeType));
-      const attachmentInput=attachmentText(ctx.attachments,true,file=>images.includes(file)),schemas=defs.map(d=>({name:d.name,description:d.description,parameters:toolSchema(d,true)}));
+      const attachmentInput=attachmentText(ctx.attachments,true,file=>images.includes(file)),direct=opts.directTools??DIRECT_TOOLS,schemas=defs.filter(d=>direct.has(d.name)).map(d=>({name:d.name,description:d.description,parameters:toolSchema(d,true)}));
       prepareTurnInput(ctx,attachmentInput,schemas,ctx.hostedInput,requestModelName);
       const recall=await ctx.loadHostedRecall?.()??[];
       ctx.signal?.throwIfAborted();
@@ -99,7 +133,8 @@ export function createApiRuntime(opts: ApiRuntimeOptions = {}): BotRuntime {
         };
         return typeof value==='function'?value.bind(target):value;
       }});
-      const agent = new Agent({id:ctx.bot.id,name:ctx.bot.name,instructions:prepared.instructions,model:requestModel,maxRetries:0,errorProcessorDefaults:false,maxProcessorRetries:0,tools:buildMastraTools(ctx,defs)});
+      const offered=toolSearch(buildMastraTools(ctx,defs),defs,direct);
+      const agent = new Agent({id:ctx.bot.id,name:ctx.bot.name,instructions:prepared.instructions,model:requestModel,maxRetries:0,errorProcessorDefaults:false,maxProcessorRetries:0,tools:offered.tools});
       const configuration = modelConfig(ctx.bot), budget = configuration.reasoning?.budget_tokens;
       if (modelTarget(ctx.bot) === "anthropic" && typeof budget === "number" && (!Number.isSafeInteger(configuration.outputLimit) || configuration.outputLimit! <= budget)) throw new Error("Saved thinking budget has no safe model output limit. Refresh model choices before retrying.");
       // The installed Anthropic transport adds its thinking budget to maxOutputTokens.
@@ -108,7 +143,7 @@ export function createApiRuntime(opts: ApiRuntimeOptions = {}): BotRuntime {
       if(Number(ctx.state.hostedSteps??0)>=limit)return {outcome:'incomplete' as const,reason:'step_limit' as const};
       let partial='',streamPartial='';
       let result;
-      try { result = await agent.generate(prompt, { modelSettings: { maxRetries:0,...reasoningSettings(modelTarget(ctx.bot) ?? "", configuration.reasoning ?? {}, typeof model === "string" ? model : ctx.bot.model ?? ""), ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}) }, maxSteps: limit-Number(ctx.state.hostedSteps??0), prepareStep:()=>{beginModelStep(ctx,limit);},onStepFinish:step=>{if(step.text){partial=step.text;streamPartial='';}},onChunk:chunk=>{if(chunk.type==='text-delta')streamPartial=(streamPartial+chunk.payload.text).slice(0,100000);}, abortSignal: ctx.signal, providerOptions: requestOptions(ctx) as AgentExecutionOptionsBase<unknown>["providerOptions"] });
+      try { result = await agent.generate(prompt, { modelSettings: { maxRetries:0,...reasoningSettings(modelTarget(ctx.bot) ?? "", configuration.reasoning ?? {}, typeof model === "string" ? model : ctx.bot.model ?? ""), ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}) }, maxSteps: limit-Number(ctx.state.hostedSteps??0), prepareStep:()=>{beginModelStep(ctx,limit);return {activeTools:offered.active()};},onStepFinish:step=>{if(step.text){partial=step.text;streamPartial='';}},onChunk:chunk=>{if(chunk.type==='text-delta')streamPartial=(streamPartial+chunk.payload.text).slice(0,100000);}, abortSignal: ctx.signal, providerOptions: requestOptions(ctx) as AgentExecutionOptionsBase<unknown>["providerOptions"] });
       } catch(error) {
         ctx.signal?.throwIfAborted();
         const stopped=requestOutcome(ctx);if(stopped){if(streamPartial||partial)ctx.ledger.append(ctx.room.id,ctx.bot.id,'bot_output',{turnId:ctx.turnId,text:streamPartial||partial});return stopped;}

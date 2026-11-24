@@ -273,6 +273,18 @@ try{
  ownedCheck.dispose();let checkDrained=false;const drainCheck=ownedCheck.idle().then(()=>{checkDrained=true;});await new Promise(resolve=>setImmediate(resolve));assert.equal(checkDrained,false);finishOwnedCheck({ok:true,tools:[],truncated:false});await drainCheck;assert.equal(approvals.receipts.get(owned.approvalId).outcome,'completed');
  group('accepted server checks drain before storage closes');
 
+ // A tools list offers only the named remote tools; null removes the list.
+ writeConfig(initial);await req('POST','/mcp/reload');
+ assert.equal((await add({id:'listed',url:'https://listed.example/mcp',tools:['OTHER'],digest:await digest()})).status,201);
+ assert.deepEqual(read().servers.find(s=>s.id==='listed').tools,['OTHER']);
+ assert.equal((await statusOf('listed')).toolCount,0,'SEARCH is not on the list, so nothing is offered');
+ assert.equal((await req('PATCH','/mcp/servers/listed',{body:{tools:['SEARCH'],digest:await digest()}})).status,200);
+ assert.equal((await statusOf('listed')).toolCount,1);
+ assert.equal((await req('PATCH','/mcp/servers/listed',{body:{tools:null,digest:await digest()}})).status,200);
+ assert.equal('tools' in read().servers.find(s=>s.id==='listed'),false);
+ assert.equal((await req('PATCH','/mcp/servers/listed',{body:{tools:[],digest:await digest()}})).status,400,'an empty list is refused: remove the list instead');
+ group('a tools list limits what a server offers, and null removes it');
+
  // 8. Nothing sensitive in responses, the ledger or the setup audit.
  writeConfig(initial);await req('POST','/mcp/reload');
  await add({id:'linear',url:'https://mcp.linear.example/mcp',headers:{Authorization:'Bearer ${OPENAG_MCP_LINEAR}'},digest:await digest()});

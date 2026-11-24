@@ -4,6 +4,8 @@
 
 API and Ollama turns use at most 20 model steps by default. In Bot settings, the owner can set Maximum model steps from 1 to 100. Each turn also permits at most 40 executed tools; refused proposals do not consume that execution allowance. Settings are captured when the turn starts and retained for same-turn recovery. ACP keeps its adapter-owned execution behavior.
 
+API agents receive the most used tools (files, shell, help and status, questions, memory, skills, agent consultation) with every request. Other tools, including every connected MCP tool, are listed by name in `tool_search`; searching loads up to five matches for the rest of that turn, and each call still goes through the same permission and approval checks. A search uses one model step. Ollama and ACP agents are unchanged.
+
 A normal final answer at the exact limit can complete. A forced stop, unresolved calls, output-length stop or omitted oversized tool data is reported as Incomplete, with the reason and any partial findings retained. Model-facing tool data is capped at 20,000 characters in valid JSON. Retained tool events and action receipts remain separate evidence; connected tools can also apply their own output limits.
 
 Incomplete appears in chat, linked Work and automation history. Unknown actions remain in history without a manual inspection requirement; neither Incomplete nor a completed turn proves an external effect. There is no automatic continuation or action retry. Model-request retries are described below. Scheduled turns are not investigations.

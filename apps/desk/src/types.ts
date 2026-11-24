@@ -306,6 +306,8 @@ export interface McpEntryView {
   headers?: { name: string; template: string }[];
   /** Sign in with OAuth (OA-457): the scope to ask for and an optional client metadata document address. */
   oauth?: { scope?: string; clientMetadataUrl?: string };
+  /** Only these remote tool names are offered; absent means every tool. */
+  tools?: string[];
   /** A local command written from the desk (OA-456). Commands the operator wrote have none of these. */
   managedBy?: "desk";
   command?: string;
@@ -341,6 +343,8 @@ export interface McpServerInput {
   timeoutMs?: number;
   /** OAuth sign-in settings; `null` on an edit turns it off. */
   oauth?: { scope?: string; clientMetadataUrl?: string } | null;
+  /** Offer only these remote tool names; `null` on an edit offers every tool again. */
+  tools?: string[] | null;
 }
 
 export interface McpCheckTool { name: string; description: string }
@@ -803,7 +807,7 @@ export interface ConversationRequest {kind:"question"|"provider";id:string;at:nu
 export interface ProactiveService { id: string; check: string | null; connected?: boolean }
 export interface ProactiveAccount { service: string; accountId: string; alias: string; lastAttemptAt: number | null; lastSuccessAt: number | null; coveredUntil: number | null; status: string; reason: string | null }
 export interface ProactiveRun { id: number; service: string; accountId: string | null; startedAt: number; endedAt: number | null; status: string; reason: string | null; items: number; decisionId: number | null; fromAt: number | null; untilAt: number | null; evidence: Array<{id:string;version:string;text:string;reference:string}> }
-export interface ProactiveDailyUsage { date: string; calls: number; models: string[]; tokens: { input: number; output: number; reportedCalls: number } | null }
+export interface ProactiveDailyUsage { date: string; calls: number; models: string[]; tokens: { input: number; cached: number; output: number; reportedCalls: number } | null }
 export interface ProactiveStatus { revision: number; enabled: boolean; nextCheckAt: number; checking: boolean; services: ProactiveService[]; accounts: ProactiveAccount[]; runs: ProactiveRun[]; usage?: ProactiveDailyUsage[] }
 
 /** Current state is not inferred from the displayed history window. */

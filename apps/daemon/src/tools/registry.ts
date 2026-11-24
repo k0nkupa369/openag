@@ -77,6 +77,12 @@ export function enabledTools(defs: ToolDef[]): ToolDef[] {
   return defs.filter(isToolEnabled);
 }
 
+/** The tools a hosted turn offers its model. An isolated turn's gate refuses every call, so it offers none. */
+export function turnTools(defs: ToolDef[], turn: { investigation?: unknown; state: Record<string, unknown> }): ToolDef[] {
+  if (turn.state.isolated === true) return [];
+  return enabledTools(defs).filter(def => turn.investigation ? def.name === 'investigation_read' : def.name !== 'investigation_read');
+}
+
 export function toolAvailability(def: ToolDef): ToolAvailability {
   if (!def.capability) {
     const offered = def.enabled?.() ?? true;

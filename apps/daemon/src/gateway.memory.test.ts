@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createApprovals } from "./approvals.js";
 import { createAuth } from "./auth.js";
 import { type Db, openDb } from "./db/index.js";
@@ -9,6 +9,7 @@ import { createGateway } from "./gateway.js";
 import { createLedger, type Ledger } from "./ledger.js";
 import { memoryPath } from "./memory.js";
 import { createBot } from "./rooms.js";
+import { createVectorMemory } from "./vectors.js";
 
 const OWNER = "owner-test-token";
 const h = (t: string) => ({ authorization: `Bearer ${t}`, "content-type": "application/json" });
@@ -59,5 +60,14 @@ describe("memory routes", () => {
     expect(r.results[0]!.text.length).toBe(400);
     expect((await app.request("/memory/search?q=repo&bot=nope", { headers: h(OWNER) })).status).toBe(503);
     expect(((await (await app.request("/memory/search?q=a", { headers: h(OWNER) })).json()) as { results: unknown[] }).results).toEqual([]);
+  });
+
+  test("search answers 503 with the reason when the embedding service is down, not an empty result", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const embedder = { model: "m", embed: async () => { throw new Error("embedding failed: Ollama is not reachable at http://127.0.0.1:11434 (ECONNREFUSED)"); } };
+    const down = createGateway({ db, ledger, approvals: createApprovals(db, ledger), auth, dispatch: () => undefined, deskDir: join(dir, "x"), dataDir: dir, vectors: createVectorMemory({ db, embedder }) });
+    const res = await down.request("/memory/search?q=repo&bot=coder", { headers: h(OWNER) });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "Memory search is unavailable: embedding failed: Ollama is not reachable at http://127.0.0.1:11434 (ECONNREFUSED)" });
   });
 });

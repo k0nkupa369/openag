@@ -1,6 +1,6 @@
 # Memory and skills
 
-Each agent has its own MEMORY.md notes and agent-owned skills. The prompt contains a bounded memory head, optional recalled items and a small skill index. Recall can be outdated. Open the selected agent’s conversation side panel, Settings, Knows, Skills to inspect workflows and manage shared assignments.
+Each agent has its own MEMORY.md notes and agent-owned skills. The prompt contains a bounded memory head, optional recalled items and a small skill index. Recall can be outdated. Recall needs the local embedding service (Ollama). When it is not running, the agent is told that memory search is unavailable for that turn; MEMORY.md is still included, and recall resumes once Ollama answers. Open the selected agent’s conversation side panel, Settings, Knows, Skills to inspect workflows and manage shared assignments.
 
 Search the Skills list by name, description or source. Select a name to open its instructions; All skills returns to the list. Assignment switches save immediately. The Shared library switch affects all agents. Package details shows requirements and resources; About skills explains permissions.
 

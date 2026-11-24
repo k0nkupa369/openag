@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { type Db, openDb } from "./db/index.js";
 import { createRedactor } from "./redact.js";
-import { chunkText, createOllamaEmbedder, createVectorMemory, type Embedder } from "./vectors.js";
+import { chunkText, createOllamaEmbedder, createVectorMemory, type Embedder, RecallUnavailable } from "./vectors.js";
 
 let dir: string;
 let db: Db;
@@ -142,14 +142,20 @@ describe("fail soft", () => {
     expect(rows().every((r) => r.embedding_model === null)).toBe(true);
     expect(spy).toHaveBeenCalledTimes(1);
     expect(String(spy.mock.calls[0][0])).not.toContain("q1");
-    expect(await m.search("boss", "q1")).toEqual([]);
+    await expect(m.search("boss", "q1")).rejects.toThrow(RecallUnavailable);
   });
 
-  test("a slow embedder makes search return [] within the budget", async () => {
+  test("a slow embedder makes search fail as unavailable within the budget", async () => {
     const m = vm(fake("fake-a", 16, { slow: true }), { searchBudgetMs: 50 });
     const start = Date.now();
-    expect(await m.search("boss", "anything")).toEqual([]);
+    await expect(m.search("boss", "anything")).rejects.toThrow(RecallUnavailable);
     expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  test("a failing embedder makes search fail with the embedding reason, not an empty result", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const m = vm(fake("fake-a", 16, { fail: true }));
+    await expect(m.search("boss", "anything")).rejects.toThrow(/Memory search is unavailable: embedding failed: HTTP 500/);
   });
 
   test("a slow embedder with the default budget resolves within ~3 s", async () => {
@@ -157,8 +163,9 @@ describe("fail soft", () => {
     try {
       const m = vm(fake("fake-a", 16, { slow: true }));
       const p = m.search("boss", "anything");
+      const settled = expect(p).rejects.toThrow(RecallUnavailable);
       await vi.advanceTimersByTimeAsync(3100);
-      expect(await p).toEqual([]);
+      await settled;
     } finally {
       vi.useRealTimers();
     }

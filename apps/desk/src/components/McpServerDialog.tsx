@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "./ui/field";
+import { Textarea } from "./ui/textarea";
 import { Input } from "./ui/input";
 import { Switch } from "./ui/switch";
 
@@ -22,15 +23,17 @@ const rowsKey = (rows: Row[]) => JSON.stringify(rows.map(row => [row.name, row.t
 const snapshot = (entry: McpEntryView | undefined) => ({
   url: entry?.url ?? "", headers: rowsKey(toRows(entry)), allowPrivateNetwork: entry?.allowPrivateNetwork ?? false,
   timeout: entry && entry.timeoutMs !== DEFAULT_TIMEOUT_MS ? String(entry.timeoutMs) : "",
-  oauthOn: !!entry?.oauth, scope: entry?.oauth?.scope ?? "",
+  oauthOn: !!entry?.oauth, scope: entry?.oauth?.scope ?? "", tools: (entry?.tools ?? []).join("\n"),
 });
+/** Tool names typed one per line (commas also separate them). */
+const toolNames = (text: string) => [...new Set(text.split(/[\n,]/).map(name => name.trim()).filter(Boolean))];
 
 const SECRET_REF = /\$\{secret:([A-Z][A-Z0-9_]{0,63})\}/g;
 /** Secret names the headers refer to, in order of first use. */
 const secretNames = (rows: Row[]) => [...new Set(rows.flatMap(row => [...row.template.matchAll(SECRET_REF)].map(match => match[1]!)))];
 
 /** What the form currently describes, or an explanation of what is missing. Header values are references, never secrets. */
-function build(mode: "add" | "edit", url: string, rows: Row[], allowPrivateNetwork: boolean, timeout: string, oauth: { on: boolean; scope: string; existing?: { scope?: string; clientMetadataUrl?: string } }): { input: McpServerInput } | { problem: string } {
+function build(mode: "add" | "edit", url: string, rows: Row[], allowPrivateNetwork: boolean, timeout: string, oauth: { on: boolean; scope: string; existing?: { scope?: string; clientMetadataUrl?: string } }, tools: { text: string; existing: boolean }): { input: McpServerInput } | { problem: string } {
   if (rows.some(row => !row.name.trim() && row.template.trim())) return { problem: "Each header needs a name. Fill it in or remove the row." };
   if (rows.some(row => row.template.includes("[REDACTED"))) return { problem: "A header value was hidden when it was loaded. Type its variable reference again." };
   const named = rows.filter(row => row.name.trim());
@@ -47,6 +50,8 @@ function build(mode: "add" | "edit", url: string, rows: Row[], allowPrivateNetwo
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     // On an edit, switching OAuth off sends null; the address of a client metadata document set elsewhere is kept.
     ...(oauth.on ? { oauth: { ...(oauth.scope.trim() ? { scope: oauth.scope.trim() } : {}), ...(oauth.existing?.clientMetadataUrl ? { clientMetadataUrl: oauth.existing.clientMetadataUrl } : {}) } } : mode === "edit" && oauth.existing ? { oauth: null } : {}),
+    // On an edit, clearing the list sends null so every tool is offered again.
+    ...(toolNames(tools.text).length ? { tools: toolNames(tools.text) } : mode === "edit" && tools.existing ? { tools: null } : {}),
   } };
 }
 
@@ -66,6 +71,7 @@ export function McpServerDialog({ api, mode, entry, digest, open, onOpenChange, 
   const [timeout, setTimeoutText] = useState(initial.current.timeout);
   const [oauthOn, setOauthOn] = useState(!!entry?.oauth);
   const [scope, setScope] = useState(entry?.oauth?.scope ?? "");
+  const [tools, setTools] = useState(initial.current.tools);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Secrets are write-only: what is typed here is sent once after the server is saved and is never shown again.
@@ -77,9 +83,9 @@ export function McpServerDialog({ api, mode, entry, digest, open, onOpenChange, 
   const names = secretNames(rows);
   const loadStored = async () => { if (mode !== "edit" || !entry) return; try { setStored((await api.getMcpSecrets()).secrets.filter(secret => secret.serverId === entry.id)); } catch { setStored([]); } };
   useEffect(() => { void loadStored(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const built = build(mode, url, rows, allowPrivateNetwork, timeout, { on: oauthOn, scope, existing: entry?.oauth });
+  const built = build(mode, url, rows, allowPrivateNetwork, timeout, { on: oauthOn, scope, existing: entry?.oauth }, { text: tools, existing: !!entry?.tools });
   // A check only connects and lists tools: sign-in settings are not part of it.
-  const candidate = "input" in built && url.trim() ? { ...(({ oauth: _oauth, ...rest }) => rest)(built.input), ...(mode === "edit" && entry ? { id: entry.id } : id.trim() ? { id: id.trim() } : {}) } : null;
+  const candidate = "input" in built && url.trim() ? { ...(({ oauth: _oauth, tools: _tools, ...rest }) => rest)(built.input), ...(mode === "edit" && entry ? { id: entry.id } : id.trim() ? { id: id.trim() } : {}) } : null;
   const setRow = (key: number, patch: Partial<Row>) => setRows(current => current.map(row => (row.key === key ? { ...row, ...patch } : row)));
 
   // When the saved version changes underneath an open edit (after a stale save, or another writer), fields you have not touched take the
@@ -95,6 +101,7 @@ export function McpServerDialog({ api, mode, entry, digest, open, onOpenChange, 
     setTimeoutText(current => (current === was.timeout ? next.timeout : current));
     setOauthOn(current => (current === was.oauthOn ? next.oauthOn : current));
     setScope(current => (current === was.scope ? next.scope : current));
+    setTools(current => (current === was.tools ? next.tools : current));
     initial.current = next;
   }, [latest]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -175,6 +182,7 @@ export function McpServerDialog({ api, mode, entry, digest, open, onOpenChange, 
             <FieldContent><FieldLabel htmlFor="mcp-server-offer">Offer tools to agents</FieldLabel><FieldDescription>Agents can see and request this server’s tools once it is enabled.</FieldDescription></FieldContent>
             <Switch id="mcp-server-offer" checked={offerToAgents} onCheckedChange={setOfferToAgents} />
           </Field>}
+          <Field><FieldLabel htmlFor="mcp-server-tools">Tools to offer</FieldLabel><Textarea id="mcp-server-tools" value={tools} rows={3} placeholder={"notion-memory-search\nnotion-fetch"} autoComplete="off" spellCheck={false} onChange={event => setTools(event.target.value)} /><FieldDescription>Optional. One tool name per line. Leave blank to offer every tool.</FieldDescription></Field>
           <Field><FieldLabel htmlFor="mcp-server-timeout">Timeout (milliseconds)</FieldLabel><Input id="mcp-server-timeout" inputMode="numeric" value={timeout} placeholder={String(DEFAULT_TIMEOUT_MS)} autoComplete="off" onChange={event => setTimeoutText(event.target.value)} /><FieldDescription>Optional, between 1000 and 120000. Leave blank for the default.</FieldDescription></Field>
         </FieldGroup>
         {error && <Alert variant="destructive"><AlertDescription><p>{error}</p>{hint && <p>{hint}</p>}</AlertDescription></Alert>}

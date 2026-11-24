@@ -34,6 +34,12 @@ Some servers ask you to sign in with the provider instead of using a key. In Add
 
 With **Offer tools to agents** on, a connected server's tools are offered to every kind of agent; with it off they disappear from every agent's list while the server stays connected. Offering does not approve anything: an MCP tool cannot enforce a filesystem boundary, so it runs only when the agent is in Full access and is refused in the confined modes. In Full access OpenAg creates no approval for it; whether an unconfirmed result is reported as unknown still depends on the tool's class, which the owner can declare read or search in mcp.json.
 
+**Tools to offer** (Add or Edit, one tool name per line) limits a server to those remote tool names; every other tool on it is never offered to any agent. Leave it blank to offer every tool; clearing it on an edit offers every tool again. Because Full access runs MCP tools without approval, use it to keep destructive tools (delete, share, send) off servers you connect.
+
+## Notion Memory
+
+Notion's hosted server can hold memories in your Notion workspace (a Memories database and an About page, both visible and editable in Notion). Add a server named `notion` with the address `https://mcp.notion.com/mcp`, switch on **Sign in with OAuth** (no scope needed), and set **Tools to offer** to `notion-memory-search`, `notion-fetch`, `notion-create-pages` and `notion-update-page`. Then open its settings and choose **Sign in**. Notion's server lists about 90 tools; without the list every one, including deleting pages, would run without approval in Full access. With this list agents can search, read, save and update memories; fetch and update work on any page you can access, not only memories. Agents find these tools through `tool_search`. One Notion memory is shared by every agent. Notion labels the server Beta, and memory needs a personal (user-backed) connection.
+
 ## Addresses and common statuses
 
 Servers must use https and a public address. A server on this machine, your local network or Tailscale needs **Allow private network** on that server, and plain http is only allowed together with it. Link-local and cloud-metadata addresses are never allowed. Statuses you may see: "blocked private address", "http requires allowPrivateNetwork", "header references a daemon secret", "missing env NAME" (the named variable is not set for the daemon), "connect failed" or "connect timed out" (the server is unreachable).

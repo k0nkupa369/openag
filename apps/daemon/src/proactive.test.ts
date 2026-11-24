@@ -374,13 +374,13 @@ describe("model use", () => {
   test("counts model calls per local day with provider-reported tokens, newest day first", () => {
     call(T0 - DAY);
     call(T0 - DAY + 60_000);
-    call(T0, { source: "provider-reported", unit: "tokens", inputTokens: 11869, outputTokens: 74 });
+    call(T0, { source: "provider-reported", unit: "tokens", inputTokens: 11869, outputTokens: 74, cachedInputTokens: 11008 });
     event("_proactive", T0 + 2, "request_attempt", { attempt: 1, status: "cancelled" });
     call(T0 - 20 * DAY, { source: "provider-reported", unit: "tokens", inputTokens: 9, outputTokens: 9 });
     call(T0, { source: "provider-reported", unit: "tokens", inputTokens: 5, outputTokens: 5 }, "_heartbeat");
 
     expect(proactive.status().usage).toEqual([
-      { date: "2026-11-05", calls: 1, models: ["openai/gpt-5.4-mini"], tokens: { input: 11869, output: 74, reportedCalls: 1 } },
+      { date: "2026-11-05", calls: 1, models: ["openai/gpt-5.4-mini"], tokens: { input: 11869, cached: 11008, output: 74, reportedCalls: 1 } },
       { date: "2026-11-04", calls: 2, models: ["openai/gpt-5.4-mini"], tokens: null },
     ]);
   });

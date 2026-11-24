@@ -30,6 +30,8 @@ const fields = {
   enabled: z.boolean(),
   timeoutMs: z.number().int().min(1000).max(120000),
   oauth: oauthSchema.nullable(),
+  /** Offer only these remote tool names; null removes the list so every tool is offered. */
+  tools: z.array(z.string().min(1).max(200)).min(1).max(200).nullable(),
 };
 export const addServerSchema = z.object({
   id: z.string().regex(ID_RE, "id must match ^[a-z][a-z0-9_-]{0,31}$"),
@@ -40,9 +42,10 @@ export const addServerSchema = z.object({
   enabled: fields.enabled.default(true),
   timeoutMs: fields.timeoutMs.optional(),
   oauth: oauthSchema.optional(),
+  tools: fields.tools.unwrap().optional(),
   digest: z.string().min(1).max(128).optional(),
 }).strict();
-export const updateServerSchema = z.object({ ...fields, digest: z.string().min(1).max(128) }).partial({ url: true, headers: true, allowPrivateNetwork: true, offerToAgents: true, enabled: true, timeoutMs: true, oauth: true }).strict();
+export const updateServerSchema = z.object({ ...fields, digest: z.string().min(1).max(128) }).partial({ url: true, headers: true, allowPrivateNetwork: true, offerToAgents: true, enabled: true, timeoutMs: true, oauth: true, tools: true }).strict();
 export const removeServerSchema = z.object({ digest: z.string().min(1).max(128) }).strict();
 
 type Raw = Record<string, unknown>;
@@ -147,7 +150,7 @@ export function createMcpServerService(deps: { dataDir: string; mcp: McpManager;
 
   return {
     add: (input) => write(async () => {
-      const item: Raw = { id: input.id, transport: "http", url: input.url, headers: input.headers, allowPrivateNetwork: input.allowPrivateNetwork, offerToAgents: input.offerToAgents, enabled: input.enabled, ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}), ...(input.oauth ? { oauth: input.oauth } : {}) };
+      const item: Raw = { id: input.id, transport: "http", url: input.url, headers: input.headers, allowPrivateNetwork: input.allowPrivateNetwork, offerToAgents: input.offerToAgents, enabled: input.enabled, ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}), ...(input.oauth ? { oauth: input.oauth } : {}), ...(input.tools ? { tools: input.tools } : {}) };
       const invalid = validateServerItem(item);
       if (invalid) throw new McpServerError(invalid, 400);
       rejectRedactionMarker(item);
@@ -180,6 +183,7 @@ export function createMcpServerService(deps: { dataDir: string; mcp: McpManager;
           if (item.transport === "stdio" && ("url" in patch || "headers" in patch || "allowPrivateNetwork" in patch)) throw new McpServerError("a local command server has no address or headers; change its command through a new review", 400);
           const merged: Raw = { ...item, ...patch };
           if (patch.oauth === null) delete merged.oauth;
+          if (patch.tools === null) delete merged.tools;
           const invalid = validateServerItem(merged);
           if (invalid) throw new McpServerError(invalid, 400);
           rejectRedactionMarker(merged);

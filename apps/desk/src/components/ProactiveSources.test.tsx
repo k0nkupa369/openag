@@ -26,7 +26,8 @@ describe("Proactive sources and history", () => {
 
   it("shows model calls per day with provider-reported tokens", async () => {
     const api = { getProactive: vi.fn(async () => ({ ...status, usage: [
-      { date: "2026-11-20", calls: 3, models: ["openai/gpt-5.4-mini"], tokens: { input: 11869, output: 74, reportedCalls: 3 } },
+      { date: "2026-11-20", calls: 3, models: ["openai/gpt-5.4-mini"], tokens: { input: 11869, cached: 11008, output: 74, reportedCalls: 3 } },
+      { date: "2026-11-18", calls: 1, models: ["openai/gpt-5.4-mini"], tokens: { input: 900, cached: 0, output: 9, reportedCalls: 1 } },
       { date: "2026-11-19", calls: 8, models: ["gpt-6.1-terra"], tokens: null },
     ] })) } as unknown as Api;
     render(<ProactiveHistory api={api} canManage />);
@@ -34,9 +35,10 @@ describe("Proactive sources and history", () => {
     const rows = within(table).getAllByRole("row").slice(1).map((row) => row.textContent);
     expect(rows[0]).toContain("3");
     expect(rows[0]).toContain("openai/gpt-5.4-mini");
-    expect(rows[0]).toContain("11,869 in");
+    expect(rows[0]).toContain("11,869 in (11,008 cached)");
     expect(rows[0]).toContain("74 out");
-    expect(rows[1]).toContain("8");
-    expect(rows[1]).toContain("Not reported");
+    expect(rows[1]).toContain("900 in · 9 out");
+    expect(rows[2]).toContain("8");
+    expect(rows[2]).toContain("Not reported");
   });
 });

@@ -21,7 +21,7 @@ export interface ProactiveDailyUsage {
   date: string;
   calls: number;
   models: string[];
-  tokens: { input: number; output: number; reportedCalls: number } | null;
+  tokens: { input: number; cached: number; output: number; reportedCalls: number } | null;
 }
 
 /** A check that is behind runs at most this many back-to-back rounds per account: one 20-item read and one assessment each. */
@@ -282,22 +282,23 @@ export function createProactive(deps: { db: Db; ledger: Ledger; runner: Runner; 
 
   function usage(): ProactiveDailyUsage[] {
     const rows = db.prepare(`SELECT ts, type, json_extract(payload_json,'$.status') AS status, json_extract(payload_json,'$.requestedModel') AS model,
-        json_extract(payload_json,'$.usage.source') AS source, json_extract(payload_json,'$.usage.inputTokens') AS input, json_extract(payload_json,'$.usage.outputTokens') AS output
-      FROM events WHERE room_id='_proactive' AND type IN ('request_prepared','request_attempt') AND ts>=?`).all(now() - USAGE_DAYS * DAY) as Array<{ ts: number; type: string; status: string | null; model: string | null; source: string | null; input: number | null; output: number | null }>;
-    const days = new Map<string, { calls: number; models: Set<string>; input: number; output: number; reportedCalls: number }>();
+        json_extract(payload_json,'$.usage.source') AS source, json_extract(payload_json,'$.usage.inputTokens') AS input, json_extract(payload_json,'$.usage.outputTokens') AS output,
+        json_extract(payload_json,'$.usage.cachedInputTokens') AS cached
+      FROM events WHERE room_id='_proactive' AND type IN ('request_prepared','request_attempt') AND ts>=?`).all(now() - USAGE_DAYS * DAY) as Array<{ ts: number; type: string; status: string | null; model: string | null; source: string | null; input: number | null; output: number | null; cached: number | null }>;
+    const days = new Map<string, { calls: number; models: Set<string>; input: number; cached: number; output: number; reportedCalls: number }>();
     for (const row of rows) {
       const date = localDateKey(new Date(row.ts), deps.tz);
-      const day = days.get(date) ?? { calls: 0, models: new Set<string>(), input: 0, output: 0, reportedCalls: 0 };
+      const day = days.get(date) ?? { calls: 0, models: new Set<string>(), input: 0, cached: 0, output: 0, reportedCalls: 0 };
       days.set(date, day);
       if (row.type === 'request_prepared' && typeof row.model === 'string') day.models.add(row.model);
       else if (row.status === 'started') day.calls++;
       else if (row.status === 'returned' && row.source === 'provider-reported' && typeof row.input === 'number' && typeof row.output === 'number') {
-        day.input += row.input; day.output += row.output; day.reportedCalls++;
+        day.input += row.input; day.cached += row.cached ?? 0; day.output += row.output; day.reportedCalls++;
       }
     }
     const first = localDateKey(new Date(now() - (USAGE_DAYS - 1) * DAY), deps.tz);
     return [...days].filter(([date, day]) => date >= first && day.calls > 0).sort(([a], [b]) => b.localeCompare(a))
-      .map(([date, day]) => ({ date, calls: day.calls, models: [...day.models].sort(), tokens: day.reportedCalls ? { input: day.input, output: day.output, reportedCalls: day.reportedCalls } : null }));
+      .map(([date, day]) => ({ date, calls: day.calls, models: [...day.models].sort(), tokens: day.reportedCalls ? { input: day.input, cached: day.cached, output: day.output, reportedCalls: day.reportedCalls } : null }));
   }
 
   function status() {

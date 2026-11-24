@@ -25,7 +25,7 @@ import { getSetting } from "../settings.js";
 import { MAX_HOPS, parseDelegations } from "../delegation.js";
 import { handleIndex } from "../handles.js";
 import { commitMemory, ensureDataRepo } from "../datagit.js";
-import { buildPrompt, buildHostedInput, buildAcpHistory, type HostedInput, mayDelegate } from "../prompt.js";
+import { buildPrompt, buildHostedInput, buildAcpHistory, type HostedInput, mayDelegate, RECALL_UNAVAILABLE_NOTE } from "../prompt.js";
 import { ensureMemoryFile, memoryPath, readMemoryHead } from "../memory.js";
 import { createSkillCatalogue, type SkillCatalogue } from "../skills.js";
 import { type Bot, getBot, getRoom, type Room, type Runtime } from "../rooms.js";
@@ -33,7 +33,7 @@ import { getDefaultRedactor, type Redactor } from "../redact.js";
 import { classify, turnToolRestriction, sessionToolMode,sessionRequirement,operationClass,isProposalTool } from "../policy.js";
 import { createToolGate } from "./gate.js";
 import { type Pregrant, pregrantMatches } from "./pregrant.js";
-import type { VectorMemory } from "../vectors.js";
+import { RecallUnavailable, type VectorMemory } from "../vectors.js";
 import type { ToolRegistry } from "./tools.js";
 import type { BotRuntime, GateOptions, TurnContext } from "./types.js";
 
@@ -57,6 +57,7 @@ export interface RunnerDeps {
   watchdog?: { idleMs?: number; unattendedIdleMs?: number; tickMs?: number };
 }
 
+export { RECALL_UNAVAILABLE_NOTE } from "../prompt.js";
 const MINUTE = 60_000;
 /** `OPENAG_TURN_IDLE_MIN` (1-240) overrides the interactive limit. */
 function envIdleMs(): number | undefined {
@@ -486,7 +487,10 @@ export function createRunner(deps: RunnerDeps): Runner {
     const outputParts: string[] = [];
     if(!investigation&&!readCheck&&!state.agentRequestId&&!guestAssignment)ensureMemoryFile(deps.dataDir, bot);
     const memory = investigation||readCheck||state.agentRequestId||guestAssignment?'':readMemoryHead(deps.dataDir, bot.id);
-    const recall = !investigation&&!readCheck&&!state.agentRequestId&&!guestAssignment&&bot.runtime==='acp'&&vectors ? (await vectors.search(bot.id, resume?.prompt ?? text, 4)).map((h) => h.text) : [];
+    const mayRecall=!investigation&&!readCheck&&!state.agentRequestId&&!guestAssignment&&!!vectors;
+    const searchRecall=async()=>{try{return {hits:await vectors!.search(bot.id,resume?.prompt??text,4)};}catch(error){if(error instanceof RecallUnavailable)return {hits:[],unavailable:true};throw error;}};
+    const acpRecall = mayRecall&&bot.runtime==='acp' ? await searchRecall() : {hits:[]};
+    const recall = acpRecall.hits.map((h) => h.text), recallUnavailable = acpRecall.unavailable === true;
 
     const promptPermission=permissions.active()?permissions.ensure(bot.id,room.id,guestAssignment?task.workId:undefined):undefined;
     // A self-reference enforces the original revision without changing the effective adapter context.
@@ -498,7 +502,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if(promptPermission){try{modeGuidance=permissionGuidance(promptPermission,intersectPermissions(promptPermission,parentScopes()),turnPolicy);}catch{modeGuidance='Inherited permission scope is unavailable. Do not dispatch operations or try another channel; ask the owner for a fresh scope.';}}
     state.guestHistoryRevision=agentRequests.historyRevision(room.id,bot.id,message.id);
     const fork=state.isolated===true||state.noIndex===true||typeof state.source==='string'||investigation||readCheck?undefined:forkContext(db,room.id);
-    const promptInput={bot,room,roster,guestWork:guestAssignment,coordinator:!guestAssignment&&!state.unattended&&!state.isolated&&!state.agentRequestId&&!state.source&&!investigation&&(room.kind==='direct'?getDefaultBotId(db)===bot.id:room.leadBotId===bot.id),fork,permission:modeGuidance,body:messageWithReply(message,resume?.prompt??text),memory,recall,
+    const promptInput={bot,room,roster,guestWork:guestAssignment,coordinator:!guestAssignment&&!state.unattended&&!state.isolated&&!state.agentRequestId&&!state.source&&!investigation&&(room.kind==='direct'?getDefaultBotId(db)===bot.id:room.leadBotId===bot.id),fork,permission:modeGuidance,body:messageWithReply(message,resume?.prompt??text),memory,recall,recallUnavailable,
       capabilities:state.isolated===true?undefined:deps.capabilityGuidance?.(),
       knowledge:getDefaultBotId(db)===bot.id?knowledge.index():undefined,
       skills:investigation||readCheck?undefined:skills.index(bot.id)};
@@ -519,6 +523,7 @@ export function createRunner(deps: RunnerDeps): Runner {
           const sources=[contextDescriptor('current',promptInput.body,promptInput.body)];
           for(const [source,content] of [['instructions',(bot.config as {instructions?:string})?.instructions],['permission',promptInput.permission],['capabilities',promptInput.capabilities],['fork',promptInput.fork],['memory',promptInput.memory?.trimEnd()],['help',promptInput.knowledge],['skills',promptInput.skills?.trimEnd()]] as const)if(content)sources.push(contextDescriptor(source,content,content));
           for(const hit of recall){const content=hit.replace(/[\r\n]+/g,' ').slice(0,600);sources.push(contextDescriptor('recall',hit,content,undefined,hit.length>600?'source-clipped':undefined));}
+          if(recallUnavailable)sources.push(contextDescriptor('recall',RECALL_UNAVAILABLE_NOTE,RECALL_UNAVAILABLE_NOTE));
           acpHistory=buildAcpHistory(excluded?[]:history.messages,selected=>sources.push(...selected));
           acpContext={sources,historyOmitted:excluded?0:history.omitted??0,historyOmittedRange:excluded?undefined:history.omittedRange,historyBoundary:history.throughId,measurement:'javascript-string-length',limit:null,requiredCharacters:0,upstreamLoss:'unavailable'};
         }
@@ -533,7 +538,11 @@ export function createRunner(deps: RunnerDeps): Runner {
       hostedInput,
       acpHistory,acpContext,
       get awaitingInput() { return awaitingInput; },
-      loadHostedRecall:async()=>!investigation&&!readCheck&&!state.agentRequestId&&!guestAssignment&&vectors?(await vectors.search(bot.id,resume?.prompt??text,4)).slice(0,4).map(hit=>({source:`recall:${hit.source}`,content:hit.text.slice(0,600)})):[],
+      loadHostedRecall:async()=>{
+        if(!mayRecall)return [];
+        const found=await searchRecall();
+        return found.unavailable?[{source:'recall:status',content:RECALL_UNAVAILABLE_NOTE}]:found.hits.slice(0,4).map(hit=>({source:`recall:${hit.source}`,content:hit.text.slice(0,600)}));
+      },
       resumed: !!resume,
       turnId,
       workId: task.workId,

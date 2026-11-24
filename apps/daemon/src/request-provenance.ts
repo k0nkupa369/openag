@@ -150,10 +150,13 @@ export class RequestTrace {
     try{
     const response=isRecord(result)?result:{},usage=isRecord(response.usage)?response.usage:{};
     const tokens:Record<string,number>={};
-    for(const key of ['inputTokens','outputTokens','totalTokens','prompt_eval_count','eval_count']){
-      const value=usage[key]??response[key],count=isRecord(value)?value.total:value;
-      if(typeof count==='number'&&Number.isSafeInteger(count)&&count>=0)tokens[key]=count;
-    }
+    const input=isRecord(usage.inputTokens)?usage.inputTokens:{};
+    // Flat (v2) usage names cached input directly; nested (v3+) usage reports cache reads and writes under inputTokens.
+    const reported:Record<string,unknown>={
+      ...Object.fromEntries(['inputTokens','outputTokens','totalTokens','prompt_eval_count','eval_count'].map(key=>{const value=usage[key]??response[key];return [key,isRecord(value)?value.total:value];})),
+      cachedInputTokens:usage.cachedInputTokens??input.cacheRead,cacheWriteInputTokens:input.cacheWrite,
+    };
+    for(const [key,count] of Object.entries(reported))if(typeof count==='number'&&Number.isSafeInteger(count)&&count>=0&&(count>0||!key.startsWith('cache')))tokens[key]=count;
     const metadata=isRecord(response.response)?response.response:response;
     const payload={turnId:this.ctx.turnId,manifestId:this.id,attempt,status,...(typeof metadata.modelId==='string'||typeof metadata.model==='string'?{reportedModel:label(metadata.modelId??metadata.model)}:{}),usage:Object.keys(tokens).length?{source:'provider-reported',unit:'tokens',...tokens}:null};
     // A settlement write failure must never retry an already-dispatched operation.

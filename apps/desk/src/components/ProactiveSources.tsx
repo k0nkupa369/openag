@@ -20,7 +20,7 @@ import { ProactiveCard } from './ProactiveCard';
 
 const time = (value: number | null) => value ? new Date(value).toLocaleString() : 'Not yet';
 const day = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-const tokens = (usage: ProactiveDailyUsage) => !usage.tokens ? 'Not reported' : `${usage.tokens.input.toLocaleString()} in · ${usage.tokens.output.toLocaleString()} out${usage.tokens.reportedCalls < usage.calls ? ` · ${usage.tokens.reportedCalls} of ${usage.calls} calls` : ''}`;
+const tokens = (usage: ProactiveDailyUsage) => !usage.tokens ? 'Not reported' : `${usage.tokens.input.toLocaleString()} in${usage.tokens.cached ? ` (${usage.tokens.cached.toLocaleString()} cached)` : ''} · ${usage.tokens.output.toLocaleString()} out${usage.tokens.reportedCalls < usage.calls ? ` · ${usage.tokens.reportedCalls} of ${usage.calls} calls` : ''}`;
 const serviceNames: Record<string, string> = {outlook: 'Outlook', gmail: 'Gmail', github: 'GitHub', _composio: 'Composio', composio: 'Composio'};
 const serviceName = (id: string) => Object.hasOwn(serviceNames, id) ? serviceNames[id] : id.replaceAll('_', ' ').replace(/^./, letter => letter.toUpperCase());
 const names: Record<string, string> = { checked: 'Checked', no_new_items: 'No new items', quiet: 'No alert needed', incomplete: 'Incomplete', unavailable: 'Could not check', unsupported: 'No supported check', needs_sign_in: 'Needs sign-in', not_checked: 'Not checked', not_started: 'Not checked', permission_missing: 'Read access missing', rate_limited: 'Rate limited', running: 'Checking', interrupted: 'Interrupted', cancelled: 'Cancelled', ping: 'Alert posted', digest: 'Held for brief', suppressed: 'Held back' };

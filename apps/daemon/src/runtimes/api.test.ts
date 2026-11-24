@@ -12,6 +12,8 @@ import { addMember, createBot, createRoom, getBot, getRoom } from "../rooms.js";
 import { buildMastraTools, createApiRuntime } from "./api.js";
 import { createBraveTool } from "../tools/brave.js";
 import { writeFileTool } from "../tools/files.js";
+import type { ToolDef } from "../tools/registry.js";
+import { z } from "zod";
 import { createRunner } from "./runner.js";
 import { botWorkDir, defaultTools, writeWorkFile } from "./tools.js";
 
@@ -205,4 +207,51 @@ test("brave_search is only exposed to the agent when enabled", () => {
   expect(Object.keys(off)).toEqual(["write_file"]);
   const on = buildMastraTools(ctx, [writeFileTool, createBraveTool({ apiKey: () => "k" })]);
   expect(Object.keys(on).sort()).toEqual(["brave_search", "write_file"]);
+});
+
+test("an isolated turn offers the model no tools, so large tool schemas cannot refuse it", async () => {
+  const seen: unknown[] = [];
+  const model = new MockLanguageModelV3({
+    doGenerate: async (params) => {
+      seen.push(params.tools ?? []);
+      return { content: [{ type: "text" as const, text: "{\"verdict\":\"silent\"}" }], finishReason: { unified: "stop" as const, raw: "stop" }, usage, warnings: [] };
+    },
+  });
+  const huge: ToolDef = { name: "huge", class: "read", description: "x".repeat(70_000), input: z.object({}), async execute() { return {}; } };
+  const ledger = createLedger(db);
+  const approvals = createApprovals(db, ledger);
+  const permissions = createPermissions(db, ledger, dir, approvals);
+  const runner = createRunner({ db, ledger, approvals, permissions, dataDir: dir, runtimes: { api: createApiRuntime({ model: asRuntimeModel(model), tools: [huge] }) }, tools: defaultTools });
+  const message = ledger.append("main", "user", "message", { text: "assess these excerpts" });
+  await runner.run(getRoom(db, "main")!, getBot(db, "boss")!, message, undefined, { unattended: true, isolated: true, noIndex: true });
+
+  expect(seen).toEqual([[]]);
+  expect(ledger.list("main").find((e) => e.type === "turn_finished")?.payload).toMatchObject({ status: "finished" });
+});
+
+test("a withheld tool is found through search, then called through the gate in the same turn", async () => {
+  const seen: string[][] = [];
+  let step = 0;
+  const model = new MockLanguageModelV3({
+    doGenerate: async (params) => {
+      seen.push((params.tools ?? []).map((t) => t.name).sort());
+      step++;
+      const content = step === 1 ? [{ type: "tool-call" as const, toolCallId: "s1", toolName: "tool_search", input: JSON.stringify({ query: "list files" }) }]
+        : step === 2 ? [{ type: "tool-call" as const, toolCallId: "c1", toolName: "list_files", input: JSON.stringify({ path: "." }) }]
+        : [{ type: "text" as const, text: "done" }];
+      return { content, finishReason: step < 3 ? { unified: "tool-calls" as const, raw: "tool_calls" } : { unified: "stop" as const, raw: "stop" }, usage, warnings: [] };
+    },
+  });
+  const ledger = createLedger(db);
+  const approvals = createApprovals(db, ledger);
+  const runner = createRunner({ db, ledger, approvals, dataDir: dir, tools: defaultTools,
+    runtimes: { api: createApiRuntime({ model: asRuntimeModel(model), directTools: new Set(["read_file"]) }) } });
+  await runner.run(getRoom(db, "main")!, getBot(db, "boss")!, ledger.append("main", "user", "message", { text: "what files are there?" }));
+  expect(seen[0]).toContain("read_file");
+  expect(seen[0]).toContain("tool_search");
+  expect(seen[0]).not.toContain("list_files");
+  expect(seen[1]).toContain("list_files");
+  const calls = ledger.list("main").filter((e) => e.type === "tool_call").map((e) => (e.payload as { tool?: string }).tool);
+  expect(calls).toEqual(["list_files"]);
+  expect(ledger.list("main").some((e) => e.type === "tool_result")).toBe(true);
 });

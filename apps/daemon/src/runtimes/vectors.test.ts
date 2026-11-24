@@ -7,7 +7,7 @@ import { type Db, openDb } from "../db/index.js";
 import { createLedger } from "../ledger.js";
 import { addMember, createBot, createRoom, getBot, getRoom } from "../rooms.js";
 import { createVectorMemory, type Embedder } from "../vectors.js";
-import { createRunner } from "./runner.js";
+import { createRunner, RECALL_UNAVAILABLE_NOTE } from "./runner.js";
 import { defaultTools } from "./tools.js";
 import type { BotRuntime } from "./types.js";
 
@@ -96,7 +96,7 @@ describe("runner vector memory", () => {
     expect(prompts[1]).toContain("descale the kettle");
   });
 
-  test("an always-failing embedder: turns succeed and prompts have no recall section", async () => {
+  test("an always-failing embedder: turns succeed and the prompt says memory search is unavailable", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { runner, say } = setup(failing);
     await say("how do I descale the kettle");
@@ -105,5 +105,19 @@ describe("runner vector memory", () => {
     const statuses = db.prepare("SELECT status FROM turns ORDER BY created_at, rowid").all() as { status: string }[];
     expect(statuses.map((s) => s.status)).toEqual(["finished", "finished"]);
     expect(prompts.every((p) => !p.includes("recalled from earlier"))).toBe(true);
+    expect(prompts.every((p) => p.includes(RECALL_UNAVAILABLE_NOTE))).toBe(true);
+  });
+
+  test("an API bot with a failing embedder gets the unavailable note as hosted recall data", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    createBot(db, { id: "writer", runtime: "api" });
+    addMember(db, "main", "writer");
+    const recalled: unknown[] = [];
+    const api: BotRuntime = { async runTurn(ctx) { recalled.push(await ctx.loadHostedRecall?.()); } };
+    const ledger = createLedger(db);
+    const runner = createRunner({ db, ledger, approvals: createApprovals(db, ledger), dataDir: dir, runtimes: { api, acp: fake }, tools: defaultTools, vectors: createVectorMemory({ db, embedder: failing }) });
+    await runner.run(getRoom(db, "main")!, getBot(db, "writer")!, ledger.append("main", "user", "message", { text: "@writer kettle?" }));
+    await runner.idle();
+    expect(recalled).toEqual([[{ source: "recall:status", content: RECALL_UNAVAILABLE_NOTE }]]);
   });
 });

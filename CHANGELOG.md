@@ -2,6 +2,27 @@
 
 All notable changes to OpenAg are recorded here. Versions follow [Semantic Versioning](https://semver.org); before 1.0, minor versions may change interfaces.
 
+## 0.7.8
+
+### Proactive checks
+- Fixed: Outlook checks failed with `context_limit` and sent a "check was incomplete" message. Isolated turns (proactive assessments, webhook and wake-watcher runs) refuse every tool, but they still sent every tool description to the model and went over the request size limit. They now send none, which also makes each assessment call smaller.
+- Proactive history shows how much of each call's input was served from the provider's prompt cache, for example `11,869 in (11,008 cached) · 74 out`.
+
+### Cost per turn
+- Agents on hosted API models get a short list of common tools plus `tool_search`. They load any other tool by keyword when they need it, and it goes through the same approval gate. In a measured six-call run on gpt-6-luna, input tokens fell 46% (46,763 → 25,398).
+- Request records count cached input tokens from both usage formats that providers return.
+- `scripts/measure-prompt-cache.mjs --authorized-api` measures input and cached tokens per call on a temporary install.
+
+### Memory
+- When saved-memory search is unavailable (for example, embeddings are down), the bot is told so and says memory search is unavailable rather than that it does not remember. `GET /memory/search` returns 503 with the reason instead of an empty result.
+
+### MCP servers
+- **Tools to offer**: a custom MCP server can be limited to listed tool names (desk field, or `tools` in `mcp.json`). Only listed tools reach agents. Leaving it blank offers every tool, as before.
+- The MCP servers help topic has a Notion Memory setup: address `https://mcp.notion.com/mcp`, sign in with OAuth, and offer `notion-memory-search`, `notion-fetch`, `notion-create-pages` and `notion-update-page`.
+
+### Verification
+- `scripts/verify-mcp-desk.mjs` finds custom server cards again after the desk redesign removed the label it looked for.
+
 ## 0.7.7
 
 ### Default bot help

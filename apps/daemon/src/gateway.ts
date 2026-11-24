@@ -76,7 +76,7 @@ import { createSkillCatalogue, SkillError, type SkillCatalogue } from "./skills.
 import { modelsStatus } from "./models.js";
 import { MEMORY_MAX_BYTES, readMemoryFull, writeMemoryFull } from "./memory.js";
 import { commitMemory } from "./datagit.js";
-import type { VectorMemory } from "./vectors.js";
+import { RecallUnavailable, type VectorMemory } from "./vectors.js";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 
@@ -857,8 +857,8 @@ export function createGateway(deps: GatewayDeps): Hono<AppEnv> {
     try {
       const hits = await deps.vectors.search(botId, q, 8);
       return c.json({ results: hits.map((h) => ({ text: h.text.slice(0, 400), source: h.source })) });
-    } catch {
-      return c.json({ error: "embeddings unavailable" }, 503);
+    } catch (err) {
+      return c.json({ error: err instanceof RecallUnavailable ? err.message : "embeddings unavailable" }, 503);
     }
   });
 

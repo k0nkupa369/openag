@@ -99,6 +99,14 @@ describe("a plain turn", () => {
 });
 
 describe("tools go through the gate", () => {
+  test("an isolated turn sends the model no tools", async () => {
+    const s = setup([ok({ content: "done" })], { tools: [echoTool] });
+    s.ctx.state.isolated = true;
+    await s.runtime.runTurn(s.ctx);
+    expect(s.calls[0]!.body.tools).toBeUndefined();
+    expect(s.outputs).toEqual(["done"]);
+  });
+
   test("a tool call is executed ONLY via ctx.callTool and its result is fed back", async () => {
     const s = setup([ok({ content: "", tool_calls: [{ function: { name: "echo", arguments: { text: "x" } } }] }), ok({ content: "done" })], { tools: [echoTool] });
     await s.runtime.runTurn(s.ctx);

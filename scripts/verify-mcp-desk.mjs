@@ -93,7 +93,7 @@ try{
  await wait(()=>dialogs()===0,'dialog closes');await wait(()=>/linear added\./.test(text()),'success notice');
  assert.equal(statusOf('linear').offerToAgents,true,'offered to agents by default');
  assert.ok(JSON.parse(readFileSync(configPath,'utf8')).servers.some(entry=>entry.id==='linear'&&entry.headers.Authorization==='Bearer ${OPENAG_MCP_LINEAR}'),'saved as a reference, not a value');
- await mount(ownerApi,OWNER);await wait(()=>leafText('Custom MCP server'),'the card says it is a custom server');
+ await mount(ownerApi,OWNER);await wait(()=>document.querySelector('section[aria-label="MCP servers"]')?.textContent.includes('linear'),'the card is listed under MCP servers');
  group('add keeps the draft on refusal and saves a reference');
 
  // 3. Server check: nothing is contacted until the approval is accepted; results are plain text.
@@ -244,6 +244,16 @@ try{
  await click('Edit');await wait(()=>document.getElementById('mcp-server-oauth'));assert.equal(document.getElementById('mcp-server-oauth').checked,true);await toggle('mcp-server-oauth');await click('Save changes');
  await wait(()=>!JSON.parse(readFileSync(configPath,'utf8')).servers.find(e=>e.id==='oa').oauth,'OAuth switched off');await wait(()=>!document.querySelector('[aria-label="OAuth sign-in"]'),'the sign-in panel is gone');
  group('OAuth sign-in from the desk shows no token or client secret');
+
+ // 6b2. Tools to offer: a typed list limits what the server offers; clearing it on an edit offers every tool again.
+ await mount(ownerApi,OWNER);await click('Add MCP server');await fill('mcp-server-id','listed');await fill('mcp-server-url','https://listed.example/mcp');await fill('mcp-server-tools','OTHER\n SEARCH ,OTHER');
+ await click('Add server');await wait(()=>dialogs()===0,'added');
+ assert.deepEqual(JSON.parse(readFileSync(configPath,'utf8')).servers.find(e=>e.id==='listed').tools,['OTHER','SEARCH'],'one name per line or comma, trimmed and de-duplicated');
+ await wait(()=>statusOf('listed')?.toolCount===1,'only the listed SEARCH tool is offered');
+ await mount(ownerApi,OWNER,'mcp:listed');await click('Edit');await wait(()=>document.getElementById('mcp-server-tools'));
+ assert.equal(document.getElementById('mcp-server-tools').value,'OTHER\nSEARCH','the saved list is shown');await fill('mcp-server-tools','');await click('Save changes');
+ await wait(()=>!('tools' in JSON.parse(readFileSync(configPath,'utf8')).servers.find(e=>e.id==='listed')),'cleared list removed');
+ group('tools to offer limits a server and clearing it offers every tool');
 
  // 6c. An unreadable mcp.json is reported, never half-shown.
  chmodSync(configPath,0o664);await mount({...ownerApi},OWNER);await wait(()=>/cannot be read safely/.test(text()),'entries error shown');none(button('Add MCP server'),'no Add button while the file cannot be read safely');chmodSync(configPath,0o600);

@@ -4,7 +4,7 @@ import { hostedLimits, beginModelStep, modelToolResult, hostedOutcome, stopHoste
 import { attachmentText } from "../attachment-prompt.js";
 import { prepareTurnInput } from "../prompt.js";
 import { defaultToolDefs } from "../tools/index.js";
-import { enabledTools, toolSchema, type ToolDef } from "../tools/registry.js";
+import { toolSchema, turnTools, type ToolDef } from "../tools/registry.js";
 import { INVALID_MODEL_OVERRIDE, modelOverride, modelConfig, recordModel } from "../botmodels.js";
 import type { BotRuntime, TurnContext } from "./types.js";
 
@@ -113,7 +113,7 @@ export function createOllamaRuntime(opts: OllamaRuntimeOptions = {}): BotRuntime
       const model = ollamaModelOf(ctx.bot.id, ctx.bot.model, env);
       if (!model) throw new OllamaError(`bot ${ctx.bot.id} has no valid ollama model (set its model to ollama/<name>)`);
       const url = baseUrl(env);
-      const defs=enabledTools([...(opts.tools??defaultToolDefs),...(opts.toolDefs?.()??[])]).filter(def=>ctx.investigation?def.name==='investigation_read':def.name!=='investigation_read');
+      const defs=turnTools([...(opts.tools??defaultToolDefs),...(opts.toolDefs?.()??[])],ctx);
       const byName=new Map(defs.map(d=>[d.name,d] as const));
       const tools=defs.map(d=>({type:'function',function:{name:d.name,description:d.description,parameters:toolSchema(d)}}));
       // Admission precedes capability probes as well as chat generation.

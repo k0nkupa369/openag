@@ -82,6 +82,9 @@ export function createOllamaEmbedder(opts: {
   };
 }
 
+/** Search could not run (embedding service down, slow or invalid): callers must not read this as "nothing recalled". */
+export class RecallUnavailable extends Error {}
+
 export interface VectorMemory {
   indexMemoryFile(botId: string, text: string): void;
   indexTurn(botId: string, turnId: string, question: string, answer: string): void;
@@ -316,7 +319,7 @@ export function createVectorMemory(deps: VectorMemoryDeps): VectorMemory {
         return out;
       } catch (err) {
         logError("search", err);
-        return [];
+        throw new RecallUnavailable(`Memory search is unavailable: ${redactor.redactString(err instanceof Error ? err.message : "unknown error")}`);
       }
     },
   };
