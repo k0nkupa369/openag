@@ -13,6 +13,7 @@ import { COMPOSIO_SERVER_ID, type ComposioConnect } from "./composio-connect.js"
 import { launchCommand, packageProblem } from "./integration-packages.js";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ToolListChangedNotificationSchema, ErrorCode, McpError, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { getDefaultRedactor, type Redactor } from "./redact.js";
@@ -794,7 +795,8 @@ export function createMcpManager(opts: McpManagerOptions): McpManager {
         // A connect that finishes after the timeout must still be closed.
         attempt.abort();
         if (!connection) trackCleanup(connecting.then(late => late.close(),()=>undefined));
-        return { ok: false, reason: err instanceof TimeoutError ? err.message : ssrfReason(err) ?? "connect failed" };
+        // A 401 means the server answered and wants sign-in; the check never carries a token.
+        return { ok: false, reason: err instanceof TimeoutError ? err.message : err instanceof StreamableHTTPError && err.code === 401 ? "needs sign-in" : ssrfReason(err) ?? "connect failed" };
       } finally {
         if(connection)await closeHandle(connection);
         pendingConnections.delete(attempt);

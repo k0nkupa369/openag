@@ -2,6 +2,12 @@
 
 All notable changes to OpenAg are recorded here. Versions follow [Semantic Versioning](https://semver.org); before 1.0, minor versions may change interfaces.
 
+## 0.7.9
+
+### MCP servers
+- Fixed: agents on hosted API models could find an MCP tool through `tool_search` but never call it, so no MCP tool (Notion, Composio, Apple apps and others) worked for them on 0.7.8. Found tools are now offered on the next step. Claude Code and Codex agents were not affected.
+- Checking a server that needs sign-in (such as Notion) shows **Server reachable: sign-in needed** with the next step, instead of a failed check.
+
 ## 0.7.8
 
 ### Proactive checks

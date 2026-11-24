@@ -255,3 +255,26 @@ test("a withheld tool is found through search, then called through the gate in t
   expect(calls).toEqual(["list_files"]);
   expect(ledger.list("main").some((e) => e.type === "tool_result")).toBe(true);
 });
+
+test("an MCP tool found through search is offered on the next step", async () => {
+  const seen: string[][] = [];
+  let step = 0;
+  const model = new MockLanguageModelV3({
+    doGenerate: async (params) => {
+      seen.push((params.tools ?? []).map((t) => t.name).sort());
+      step++;
+      const content = step === 1 ? [{ type: "tool-call" as const, toolCallId: "s1", toolName: "tool_search", input: JSON.stringify({ query: "notion memory search" }) }]
+        : [{ type: "text" as const, text: "done" }];
+      return { content, finishReason: step < 2 ? { unified: "tool-calls" as const, raw: "tool_calls" } : { unified: "stop" as const, raw: "stop" }, usage, warnings: [] };
+    },
+  });
+  // MCP tools are named mcp.<server>.<tool>; the request carries them with dots replaced, as providers require.
+  const notion: ToolDef = { name: "mcp.notion.notion-memory-search", class: "read", description: "Search the user's Notion Memory.", input: z.object({ query: z.string() }), async execute() { return {}; } };
+  const ledger = createLedger(db);
+  const approvals = createApprovals(db, ledger);
+  const runner = createRunner({ db, ledger, approvals, dataDir: dir, tools: defaultTools,
+    runtimes: { api: createApiRuntime({ model: asRuntimeModel(model), directTools: new Set(["read_file"]), toolDefs: () => [notion] }) } });
+  await runner.run(getRoom(db, "main")!, getBot(db, "boss")!, ledger.append("main", "user", "message", { text: "what does my notion memory say?" }));
+  expect(seen[0]).not.toContain("mcp_notion_notion-memory-search");
+  expect(seen[1]).toContain("mcp_notion_notion-memory-search");
+});

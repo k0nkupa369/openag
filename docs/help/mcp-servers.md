@@ -28,7 +28,7 @@ Some servers ask you to sign in with the provider instead of using a key. In Add
 
 ## Check server
 
-**Check server** proposes a check and shows it as an approval in the same dialog. OpenAg contacts the server only after you accept. It lists up to 50 tool names with their descriptions (untrusted text from the server), saves nothing and makes no tool available. Cancel check, or an unanswered check expiring after 5 minutes, contacts nothing. Approving a check does not approve any tool the server offers.
+**Check server** proposes a check and shows it as an approval in the same dialog. OpenAg contacts the server only after you accept. It lists up to 50 tool names with their descriptions (untrusted text from the server), saves nothing and makes no tool available. Cancel check, or an unanswered check expiring after 5 minutes, contacts nothing. Approving a check does not approve any tool the server offers. A check never signs in, so a server that needs sign-in (such as Notion) shows **Server reachable: sign-in needed**: turn on Sign in with OAuth, save, then sign in from its settings.
 
 ## Offering tools to agents
 

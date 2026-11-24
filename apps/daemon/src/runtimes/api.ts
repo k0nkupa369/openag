@@ -75,7 +75,8 @@ function toolSearch(tools: ReturnType<typeof buildMastraTools>, defs: ToolDef[],
     },
   });
   const all = { ...tools, ...(deferred.length ? { tool_search: search } : {}) };
-  const active = () => Object.keys(all).filter(name => direct.has(name) || name === "tool_search" || loaded.has(name));
+  // Mastra sends each tool under a provider-safe name (mcp.notion.x becomes mcp_notion_x) and matches activeTools against that name.
+  const active = () => Object.keys(all).filter(name => direct.has(name) || name === "tool_search" || loaded.has(name)).map(name => name.replace(/[^a-zA-Z0-9_-]/g, "_"));
   return { tools: all, active };
 }
 

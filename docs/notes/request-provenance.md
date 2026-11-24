@@ -56,7 +56,7 @@ The first real ACP fixture assertion incorrectly counted Codex's failed own-serv
 
 ## Tool search for API bots (measured 23 Nov 2026)
 
-`runtimes/api.ts` registers every offered tool with Mastra as before (same schemas, same `ctx.callTool` gate) but sends only `DIRECT_TOOLS`, `tool_search` and the tools loaded in the current turn (`prepareStep` → `activeTools`). `tool_search` lists every withheld tool by name in its description; a keyword query loads up to five matches until the turn ends. It is a catalogue lookup executed by the runtime, not a gated tool, and it can only reveal tools already offered to that bot. Request traces record the tools actually sent.
+`runtimes/api.ts` registers every offered tool with Mastra as before (same schemas, same `ctx.callTool` gate) but sends only `DIRECT_TOOLS`, `tool_search` and the tools loaded in the current turn (`prepareStep` → `activeTools`). `tool_search` lists every withheld tool by name in its description; a keyword query loads up to five matches until the turn ends. It is a catalogue lookup executed by the runtime, not a gated tool, and it can only reveal tools already offered to that bot. Mastra sends each tool under a provider-safe name (`mcp.notion.x` becomes `mcp_notion_x`) and matches `activeTools` against that name, so the runtime passes the safe names; calls come back under the original name. Before this, a loaded MCP tool was never sent (24 Nov: Notion memory search found but not callable). Request traces record the tools actually sent.
 
 Mastra's `ToolSearchProcessor` was tried first and rejected: tools it injects skip the per-provider schema conversion, so OpenAI filled optional fields (`everyMinutes: 5`, `botId: null`) and `propose_proactive` was refused on every call.
 

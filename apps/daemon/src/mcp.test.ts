@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -386,6 +387,17 @@ describe("manager with in-memory servers", () => {
     expect(byId.broken).toMatchObject({ state: "down", detail: "connect failed" });
     expect(JSON.stringify(m.status())).not.toContain("secret.example");
     expect(byId.fine?.state).toBe("connected");
+  });
+
+  test("a server check that the server answers with 401 reports needs sign-in, not a failed connection", async () => {
+    writeConfig({ servers: [] });
+    const h = harness();
+    h.connector = async (cfg) => { throw new StreamableHTTPError(cfg.url?.includes("auth") ? 401 : 500, "Error POSTing to endpoint"); };
+    const m = manager(h);
+    await m.load();
+    const item = (url: string) => ({ id: "cand", transport: "http", url, headers: {}, allowPrivateNetwork: false });
+    expect(await m.checkServer(item("https://auth.example/mcp"))).toEqual({ ok: false, reason: "needs sign-in" });
+    expect(await m.checkServer(item("https://down.example/mcp"))).toEqual({ ok: false, reason: "connect failed" });
   });
 
   test("reload re-reads the file", async () => {

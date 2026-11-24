@@ -77,10 +77,12 @@ export function McpServerCheck({ api, candidate }: { api: Api; candidate: (McpSe
   </section>;
 }
 
-function CheckResult({ state }: { state: McpCheckState }) {
+export function CheckResult({ state }: { state: McpCheckState }) {
   if (state.state === "declined") return <Alert><AlertTitle>Not checked</AlertTitle><AlertDescription>The check was cancelled, so nothing was contacted.</AlertDescription></Alert>;
   if (state.state === "expired") return <Alert><AlertTitle>Check expired</AlertTitle><AlertDescription>The check was not approved in time. Request it again.</AlertDescription></Alert>;
   if (state.state !== "done") return null;
+  // The server answered and wants sign-in: reachable, not broken. The check never carries a sign-in token.
+  if (!state.ok && state.reason === "needs sign-in") return <Alert><AlertTitle>Server reachable: sign-in needed</AlertTitle><AlertDescription>Turn on Sign in with OAuth, save the server, then choose Sign in in its settings.</AlertDescription></Alert>;
   if (!state.ok) {
     const hint = mcpHint(state.reason);
     return <Alert variant="destructive"><AlertTitle>The check did not complete</AlertTitle><AlertDescription><p>{state.reason}</p>{hint && <p>{hint}</p>}</AlertDescription></Alert>;
