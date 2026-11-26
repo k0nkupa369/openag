@@ -17,7 +17,7 @@
   {
     "slug": "bots-models",
     "title": "Bots and models",
-    "summary": "Bot creation, unique handles, model selection, runtime reports and permissions.",
+    "summary": "Creating bots, handles, model choice, runtime reports and permissions.",
     "sources": [
       "apps/daemon/src/botmodels.ts",
       "apps/daemon/src/model-catalogue.ts",
@@ -32,9 +32,10 @@
   {
     "slug": "conversations",
     "title": "Chats and rooms",
-    "summary": "Direct chats, guest mentions, bounded agent consultations, routing, context and Request details.",
+    "summary": "Direct chats, guests, agent consultations, routing, context and Request details.",
     "sources": [
       "docs/notes/conversation-model.md",
+      "docs/notes/history-search.md",
       "docs/notes/provider-routing.md",
       "docs/notes/hosted-context.md",
       "docs/notes/chat-history.md",
@@ -45,7 +46,7 @@
   {
     "slug": "model-requests",
     "title": "Model requests",
-    "summary": "Model step limits, Incomplete results and automatic retries for API and Ollama turns.",
+    "summary": "Step limits, Incomplete results and retries for API and Ollama turns.",
     "sources": [
       "docs/notes/hosted-outcomes.md",
       "docs/notes/model-retries.md"
@@ -54,7 +55,7 @@
   {
     "slug": "room-creation",
     "title": "Create a room",
-    "summary": "Named rooms, member and lead selection, access and uncertain creation recovery.",
+    "summary": "Named rooms, members, lead, access and uncertain creation recovery.",
     "sources": [
       "docs/notes/room-creation.md",
       "apps/daemon/src/roomcreation.ts",
@@ -65,7 +66,7 @@
   {
     "slug": "work",
     "title": "Work and ordinary chat",
-    "summary": "Explicit approved Work creation, separate start, visibility and execution history.",
+    "summary": "Approved Work creation, separate start, visibility and history.",
     "sources": [
       "apps/daemon/src/runtimes/runner.ts",
       "apps/daemon/src/work.ts",
@@ -109,7 +110,7 @@
   {
     "slug": "proactive",
     "title": "Proactive features and automations",
-    "summary": "Composio service checks, account coverage and failures, schedules, reflection and brief.",
+    "summary": "Composio service checks, accounts, schedules, reflection and brief.",
     "sources": [
       "apps/daemon/src/proactive.ts",
       "apps/daemon/src/proactive-composio.ts",
@@ -124,7 +125,7 @@
   {
     "slug": "computer",
     "title": "Computer",
-    "summary": "Managed computer control, backends, human takeover and status refresh.",
+    "summary": "Managed computer control, backends, human takeover and status.",
     "sources": [
       "docs/notes/cua.md",
       "apps/daemon/src/capabilities.ts"
@@ -133,7 +134,7 @@
   {
     "slug": "computer-connectors",
     "title": "Integrations",
-    "summary": "App library, connectors, MCP servers, Composio and administrator setup.",
+    "summary": "App library, connectors, MCP servers, Composio and admin setup.",
     "sources": [
       "docs/apps.md",
       "apps/daemon/src/mcp.ts",
@@ -147,7 +148,7 @@
   {
     "slug": "mcp-servers",
     "title": "MCP servers",
-    "summary": "Custom MCP servers: adding, checking, secrets, local commands, OAuth sign-in, private networks.",
+    "summary": "Custom MCP servers: checks, secrets, local commands, OAuth, private networks.",
     "sources": [
       "apps/daemon/src/mcp-servers.ts",
       "apps/daemon/src/mcp-check.ts",
@@ -162,7 +163,7 @@
   {
     "slug": "dictation",
     "title": "Composer dictation",
-    "summary": "Dictation setup, recording, draft editing, cancellation and connection limits.",
+    "summary": "Dictation setup, recording, draft editing, cancellation and limits.",
     "sources": [
       "docs/notes/composer-dictation.md",
       "apps/daemon/src/transcription.ts",
@@ -172,7 +173,7 @@
   {
     "slug": "agent-requests",
     "title": "Agent requests",
-    "summary": "Consult an existing agent or address a guest in a direct chat; context, limits and cancellation.",
+    "summary": "Consulting an agent or guest from a direct chat; context, limits, cancel.",
     "sources": [
       "docs/notes/agent-requests.md",
       "apps/daemon/src/agent-requests.ts",
@@ -186,7 +187,7 @@
   {
     "slug": "conversation-forks",
     "title": "Existing conversation forks",
-    "summary": "Existing forked rooms remain available; chat checkpoint creation is removed.",
+    "summary": "Existing forked rooms stay available; checkpoint creation is removed.",
     "sources": [
       "docs/notes/conversation-forks.md",
       "apps/daemon/src/conversation-forks.ts",
@@ -196,7 +197,7 @@
   {
     "slug": "proposals",
     "title": "Default bot proposals",
-    "summary": "Changes the default bot can propose, who accepts them, and what can never be proposed.",
+    "summary": "What the default bot can propose, who accepts, and what it never can.",
     "sources": [
       "docs/notes/default-bot-management-design.md",
       "apps/daemon/src/management-proposals.ts",

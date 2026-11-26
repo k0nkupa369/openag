@@ -305,6 +305,10 @@ A scheduled, concise account of material developments, unresolved matters and de
 **Memory**:
 Retained facts, preferences and decisions used to maintain continuity. Remembered information can be outdated and must not replace current evidence or grant permission.
 
+**Owner notes**:
+The installation-wide standing notes about the owner that every agent sees. They are distinct from an agent's own memory and from the profile, which is a display preference only.
+_Avoid_: Profile, shared memory
+
 **Skill**:
 A reviewed, reusable method for carrying out a class of work. A skill describes how to work; a responsibility defines what to keep watching and when to act within an agreed scope.
 

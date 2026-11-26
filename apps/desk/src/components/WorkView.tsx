@@ -519,6 +519,7 @@ function WorkOverview({
             <ApprovalCard
               key={link.id}
               approval={pending}
+              api={api}
               onDecide={onDecide}
               botName={botName(pending.botId, bots)}
               inline

@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 const IGNORE_LINES = ["*.db", "*.db-*", "*.db*", "logs/", ".owner/", ".connectors/", "bots/*/work/"];
+const OWNER_NOTES_PATHSPEC = ":(literal)OWNER_NOTES.md";
 const MEMORY_PATHSPEC = ":(glob)bots/*/MEMORY.md";
 const SKILLS_PATHSPEC = ":(glob)bots/*/skills/*/SKILL.md";
 
@@ -64,7 +65,7 @@ async function commitMemoryNow(dataDir: string, message: string): Promise<boolea
   // Start from an empty index so a file someone staged by hand can never ride along in a memory commit.
   await git(dataDir, ["reset", "-q"]).catch(() => undefined);
   // One pathspec at a time: git refuses a pathspec that matches nothing (e.g. no skills yet), which is not an error here.
-  for (const spec of [".gitignore", MEMORY_PATHSPEC, SKILLS_PATHSPEC]) {
+  for (const spec of [".gitignore", OWNER_NOTES_PATHSPEC, MEMORY_PATHSPEC, SKILLS_PATHSPEC]) {
     try {
       await git(dataDir, ["add", "--", spec]);
     } catch (err) {

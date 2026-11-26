@@ -2,6 +2,27 @@
 
 All notable changes to OpenAg are recorded here. Versions follow [Semantic Versioning](https://semver.org); before 1.0, minor versions may change interfaces.
 
+## 0.8.0
+
+### History search
+- Agents can search past messages in the conversations they belong to with the new `history_search` tool. It only reads local data, needs no approval, and returns results as data to cite, never as instructions. Hidden conversations are never searched.
+- In the desk, press Cmd+K (or **Search** in the sidebar on a phone) to find a message. Choosing a result opens the conversation at that message.
+
+### Owner notes
+- One shared file of facts about you that every agent reads, shown in **Settings → Profile**. Owner and Full devices can edit it or remove single notes. Every device can read it.
+- Nightly reflection can add owner notes on its own. Notes that contain a secret, or that would push the file past 16 KB, are refused. Agents cannot write owner notes directly.
+
+### Skills
+- OpenAg records when each skill was last used, and the Skills page shows it.
+- Nightly reflection can propose revising or archiving a skill. Nothing changes until you accept. A revision shows exactly what changes, and a proposal made against an older version of the skill is refused.
+- Archived skills leave the agent's skill list and can be restored from the Skills page.
+
+### Help
+- The built-in handbook can hold up to 24 topics.
+
+### Phones over WebRTC
+- A phone connected over WebRTC can use history search and read owner notes. Editing owner notes still needs the desk on your network.
+
 ## 0.7.10
 
 ### MCP servers

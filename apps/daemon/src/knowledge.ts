@@ -5,6 +5,7 @@ import { getDefaultRedactor } from "./redact.js";
 
 export const HELP_TOPIC_MAX = 12 * 1024;
 export const HELP_INDEX_MAX = 2048;
+export const HELP_TOPICS_MAX = 24;
 const topic = z.object({
   slug: z.string().regex(/^[a-z0-9-]{1,40}$/),
   title: z.string().min(1).max(80),
@@ -12,7 +13,7 @@ const topic = z.object({
   sources: z.array(z.string().min(1).max(160)).min(1).max(8),
   body: z.string().min(1).refine(s => Buffer.byteLength(s) <= HELP_TOPIC_MAX),
 }).strict();
-export const handbookSchema = z.array(topic).min(1).max(16).refine(topics => new Set(topics.map(t => t.slug)).size === topics.length)
+export const handbookSchema = z.array(topic).min(1).max(HELP_TOPICS_MAX).refine(topics => new Set(topics.map(t => t.slug)).size === topics.length)
   .refine(topics => JSON.stringify(getDefaultRedactor().redact(topics)) === JSON.stringify(topics), "Handbook contains a credential; remove it before publishing");
 export const handbookVersion = (topics: z.infer<typeof handbookSchema>) => createHash("sha256").update(JSON.stringify(topics)).digest("hex");
 

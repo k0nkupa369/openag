@@ -214,6 +214,11 @@ export interface SkillEntry {
   reason: string | null;
   requirements: string | null;
 }
+export interface SkillUsage { id: string; loadCount: number; lastLoadedAt: number }
+export interface ArchivedSkill {
+  id: string; slug: string; name: string; description: string; version: number;
+  reason: string; archivedAt: number; loadCount: number; lastLoadedAt: number | null;
+}
 export interface SkillPackage extends SkillEntry { body: string; triggers: string[]; resources: string[] }
 export type SkillCatalogue = ReturnType<typeof createSkillCatalogue>;
 
@@ -282,8 +287,21 @@ export function createSkillCatalogue(db: Db, dataDir: string, sharedRoot = join(
         body: match[2]!, triggers: [], resources };
     } catch { return null; }
   }
+  /** Archived at the skill's CURRENT version; a row left behind by a later save is ignored. */
+  function archiveRow(botId: string, slug: string, version: number) {
+    return db.prepare("SELECT reason, archived_at FROM skill_archive WHERE bot_id = ? AND slug = ? AND version = ?").get(botId, slug, version) as
+      { reason: string; archived_at: number } | undefined;
+  }
+  /** The current agent-owned skill for a curator change, after the stale and archive checks. */
+  function curated(botId: string, slug: string, baseVersion: number) {
+    const current = loadSkill(dataDir, botId, slug);
+    if (!current) throw new SkillError("skill not found; nothing written");
+    if (current.version !== baseVersion) throw new SkillError("The skill changed after this proposal; nothing written");
+    if (archiveRow(botId, slug, current.version)) throw new SkillError("skill is archived; nothing written");
+    return current;
+  }
   function list(botId: string, inventory = false): SkillEntry[] {
-    const own: SkillEntry[] = listSkills(dataDir, botId).map(s => ({ ...s, id: `agent:${botId}:${s.slug}`, source: "agent", assigned: true,
+    const own: SkillEntry[] = listSkills(dataDir, botId).filter(s => !archiveRow(botId, s.slug, s.version)).map(s => ({ ...s, id: `agent:${botId}:${s.slug}`, source: "agent", assigned: true,
       availability: "available", reason: null, requirements: null }));
     const setting = config(), assigned = new Set((Object.hasOwn(setting.assignments, `agent:${botId}`) ? setting.assignments[`agent:${botId}`] : [])!.filter(safeIdentity));
     const shared = new Map<string, SkillEntry>();
@@ -317,8 +335,13 @@ export function createSkillCatalogue(db: Db, dataDir: string, sharedRoot = join(
     }
     return [...own, ...[...shared.values()].map(s => ({ ...s, assigned: assigned.has(s.id) })).filter(s => inventory || s.assigned)].filter(s => safeIdentity(s.id));
   }
+  function usage(botId: string): SkillUsage[] {
+    return (db.prepare("SELECT skill_id, load_count, last_loaded_at FROM skill_usage WHERE bot_id = ? ORDER BY skill_id")
+      .all(botId) as { skill_id: string; load_count: number; last_loaded_at: number }[])
+      .filter(r => safeIdentity(r.skill_id)).map(r => ({ id: r.skill_id, loadCount: r.load_count, lastLoadedAt: r.last_loaded_at }));
+  }
   function summary({ body: _body, triggers: _triggers, resources: _resources, ...entry }: SkillPackage): SkillEntry { return entry; }
-  function load(botId: string, id: string): SkillPackage | null {
+  function load(botId: string, id: string, includeArchived = false): SkillPackage | null {
     if (!safeIdentity(id)) return null;
     if (id.startsWith("shared:")) {
       const assignments = config().assignments;
@@ -330,12 +353,52 @@ export function createSkillCatalogue(db: Db, dataDir: string, sharedRoot = join(
     if (id.includes(":") && !id.startsWith(prefix)) return null;
     const skill = loadSkill(dataDir, botId, id.startsWith(prefix) ? id.slice(prefix.length) : id);
     if (skill && !safeIdentity(`${prefix}${skill.slug}`)) return null;
+    if (skill && !includeArchived && archiveRow(botId, skill.slug, skill.version)) return null;
     return skill ? { ...skill, id: `${prefix}${skill.slug}`, source: "agent", assigned: true, availability: "available", reason: null, requirements: null, resources: [] } : null;
   }
   return {
     list, load,
+    /** Counts one successful skill_load. Called only after the package was found. */
+    recordLoad(botId: string, id: string, at = Date.now()) {
+      db.prepare(`INSERT INTO skill_usage (bot_id, skill_id, load_count, last_loaded_at) VALUES (?, ?, 1, ?)
+        ON CONFLICT (bot_id, skill_id) DO UPDATE SET load_count = load_count + 1, last_loaded_at = excluded.last_loaded_at`).run(botId, id, at);
+    },
+    usage,
     setEnabled(enabled: boolean) { writeConfig({ ...config(), enabled }); },
-    inspect(botId: string, id: string) { return id.startsWith("shared:") ? sharedPackage(id.slice(7)) : load(botId, id); },
+    inspect(botId: string, id: string) { return id.startsWith("shared:") ? sharedPackage(id.slice(7)) : load(botId, id, true); },
+    /** Agent-owned skills archived at their current version, newest first, with usage. */
+    archived(botId: string): ArchivedSkill[] {
+      const used = new Map(usage(botId).map(u => [u.id, u]));
+      const rows = db.prepare("SELECT slug, version, reason, archived_at FROM skill_archive WHERE bot_id = ? ORDER BY archived_at DESC, slug")
+        .all(botId) as { slug: string; version: number; reason: string; archived_at: number }[];
+      return rows.flatMap(r => {
+        const skill = loadSkill(dataDir, botId, r.slug);
+        const id = `agent:${botId}:${r.slug}`;
+        if (!skill || skill.version !== r.version || !safeIdentity(id)) return [];
+        const u = used.get(id);
+        return [{ id, slug: skill.slug, name: skill.name, description: skill.description, version: skill.version,
+          reason: getDefaultRedactor().redactString(r.reason), archivedAt: r.archived_at, loadCount: u?.loadCount ?? 0, lastLoadedAt: u?.lastLoadedAt ?? null }];
+      });
+    },
+    /** Archives an agent-owned skill at `baseVersion`. Throws SkillError when it is missing, changed or already archived. */
+    archive(botId: string, slug: string, baseVersion: number, reason: string) {
+      const current = curated(botId, slug, baseVersion);
+      db.prepare(`INSERT INTO skill_archive (bot_id, slug, version, reason, archived_at) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (bot_id, slug) DO UPDATE SET version = excluded.version, reason = excluded.reason, archived_at = excluded.archived_at`)
+        .run(botId, slug, current.version, oneLine(reason, 200), Date.now());
+    },
+    /** False when the skill is not archived at its current version. */
+    restore(botId: string, slug: string): boolean {
+      const current = loadSkill(dataDir, botId, slug);
+      if (!current || !archiveRow(botId, slug, current.version)) return false;
+      db.prepare("DELETE FROM skill_archive WHERE bot_id = ? AND slug = ?").run(botId, slug);
+      return true;
+    },
+    /** Saves a replacement body as a new version. Throws SkillError when the skill is missing, changed or archived. */
+    revise(botId: string, input: Omit<SkillInput, "triggers"> & { baseVersion: number }) {
+      const current = curated(botId, input.slug, input.baseVersion);
+      return saveSkill(dataDir, botId, { slug: input.slug, name: input.name, description: input.description, body: input.body, triggers: current.triggers });
+    },
     status: () => ({ enabled: config().enabled, source: "~/.agents/skills", note: "On the daemon host. Requirements are not automatically checked; assignments are not a filesystem sandbox." }),
     assign(botId: string, ids: string[], add=false) {
       if (ids.some(id => !safeIdentity(id))) throw new SkillError("Skill assignment identities must not contain secrets");

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { messageOf } from "../api";
+import { messageOf, type Api } from "../api";
 import { useProfile } from "../profile";
 import { useUnsavedChanges } from "../unsaved-changes";
 import { ProfileImageEditor } from "./ProfileImageEditor";
 import { openProfileImage } from "../profile-image";
 import { UserAvatar } from "./UserAvatar";
+import { OwnerNotesSection } from "./OwnerNotesSection";
 import { SettingsHeader, SettingsSection } from "./SettingsLayout";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
@@ -13,7 +14,7 @@ import { Field, FieldLabel, FieldSet } from "./ui/field";
 import { Input } from "./ui/input";
 import { Spinner } from "./ui/spinner";
 
-export function ProfileSettings({ canManage }: { canManage: boolean }) {
+export function ProfileSettings({ api, canManage }: { api: Api; canManage: boolean }) {
   const { profile, loading, error: loadError, save } = useProfile();
   const [draft, setDraft] = useState(profile);
   const [base, setBase] = useState(profile);
@@ -53,7 +54,7 @@ export function ProfileSettings({ canManage }: { canManage: boolean }) {
     finally { saving.current = false; setBusy(false); }
   }
   return <section className="flex min-w-0 flex-col gap-6" aria-labelledby="profile-title">
-    <SettingsHeader id="profile-title" title="Profile" description="Choose the name and avatar shown with your messages." />
+    <SettingsHeader id="profile-title" title="Profile" description="Your name and avatar on messages, and the notes every agent keeps about you." />
     {(error || loadError) && <Alert variant="destructive"><AlertDescription>{error || loadError}</AlertDescription></Alert>}
     {loading && <p role="status">Loading profile…</p>}
     {!canManage && <p className="text-sm text-muted-foreground">Full access is required to edit the profile.</p>}
@@ -76,6 +77,7 @@ export function ProfileSettings({ canManage }: { canManage: boolean }) {
         {saved && <p role="status" className="text-sm text-muted-foreground">Profile saved.</p>}
       </form>
     </SettingsSection>
+    <OwnerNotesSection api={api} canManage={canManage} />
     <Dialog open={!!image} onOpenChange={open => { if (!open) setImage(null); }}>
       <DialogContent className="sm:max-w-md">
         {image && <ProfileImageEditor image={image} onSave={avatar => { setDraft(current => ({ ...current, avatar })); setSaved(false); }} close={() => setImage(null)} />}

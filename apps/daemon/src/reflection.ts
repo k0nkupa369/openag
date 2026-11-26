@@ -3,13 +3,13 @@ import { commitMemoryOrThrow } from "./datagit.js";
 import type { Approvals } from "./approvals.js";
 import type { Db } from "./db/index.js";
 import type { Ledger } from "./ledger.js";
-import { appendMemoryNote, memoryPath, readMemoryHead } from "./memory.js";
+import { appendMemoryNote, appendOwnerNote, memoryPath, ownerNoteRefusal, ownerNotesPath, readMemoryHead } from "./memory.js";
 import { getDefaultRedactor } from "./redact.js";
-import { ProposalsSchema, REFLECTION_SKILL_TOOL } from "./reflection-schema.js";
+import { ProposalsSchema, REFLECTION_SKILL_ARCHIVE_TOOL, REFLECTION_SKILL_REVISE_TOOL, REFLECTION_SKILL_TOOL } from "./reflection-schema.js";
 import { getDefaultBotId } from "./defaultbot.js";
 import { resolveDeliveryRoom } from "./delivery.js";
 import { getBot, getRoom, addMember } from "./rooms.js";
-import { loadSkill } from "./skills.js";
+import { loadSkill, type SkillCatalogue } from "./skills.js";
 import { getSetting, localParts, type Reflection as ReflectionSetting } from "./settings.js";
 import type { Scheduler } from "./scheduler.js";
 import type { Runner } from "./runtimes/runner.js";
@@ -31,9 +31,15 @@ const DIGEST_ROWS = 500;
 const RECENT_RUNS = 10;
 
 export const REFLECTION_INSTRUCTION =
-  "Nightly reflection. Review the recent conversation digest and the current MEMORY.md below. Propose only durable facts worth keeping in MEMORY.md, one fact per proposal. Never include secrets, credentials or personal data that is not needed. Do not repeat anything already in MEMORY.md. The daemon saves valid memory notes automatically; skill drafts require approval. Do not call tools; only return proposals.";
+  "Nightly reflection. Review the recent conversation digest and the current MEMORY.md below. Propose only durable facts worth keeping in MEMORY.md, one fact per proposal. Never include secrets, credentials or personal data that is not needed. Do not repeat anything already in MEMORY.md. A durable fact about the owner themselves that every agent should know (who they are, where they live, how they like to work) goes to the shared owner notes as {\"kind\":\"owner_note\",\"text\":\"one short fact\"} instead; do not repeat anything already in the owner notes. The daemon saves valid memory notes automatically; skill drafts require approval. Do not call tools; only return proposals.";
 const SKILL_INSTRUCTION =
   'Also propose skills for repeatable workflows the user asked for more than once, as {"kind":"skill","slug":"lowercase-dashes","name":"...","description":"one line","body":"the steps"}.';
+const CURATOR_INSTRUCTION =
+  'You may also curate agent skills from the usage summary below: {"kind":"skill_revise","slug":"agent-skill-slug","body":"the complete replacement steps","reason":"one line"} only for a skill whose current text is shown and recent conversation shows it was wrong or incomplete, and {"kind":"skill_archive","slug":"agent-skill-slug","reason":"one line"} for a skill that is never or rarely loaded. Shared skills are report only. Every revision and archive waits for the owner.';
+const USAGE_MAX_ENTRIES = 40;
+const USAGE_MAX_CHARS = 3_000;
+const SHOWN_BODIES_MAX_CHARS = 12_000;
+const OFTEN_LOADS = 5;
 const FORMAT_INSTRUCTION = (skills: boolean) =>
   `Reply with ONLY a JSON object, no other text: {"proposals":[{"kind":"memory_append","text":"one short fact"}]}${skills ? " (skill entries as described above may be added to the list)" : ""}. Reply {"proposals":[]} when nothing is worth keeping.`;
 
@@ -77,6 +83,8 @@ export interface ReflectionDeps {
   dataDir: string;
   /** Skill proposals are only requested and accepted when true (skills are OA-204). Default false. */
   skillsEnabled?: boolean;
+  /** Skill curator (revise/archive proposals and the usage summary). Requires skillsEnabled. */
+  skills?: SkillCatalogue;
   /** Clock; injectable for tests. */
   now?: () => Date;
 }
@@ -134,10 +142,11 @@ export function buildDigest(db: Db, sinceMs: number): string {
   return getDefaultRedactor().redactString(lines.reverse().join("\n"));
 }
 
-export function buildReflectionPrompt(memoryHead: string, digest: string, skills: boolean): string {
+export function buildReflectionPrompt(memoryHead: string, digest: string, skills: boolean, curator?: string): string {
   return [
     REFLECTION_INSTRUCTION,
     ...(skills ? [SKILL_INSTRUCTION] : []),
+    ...(skills && curator ? [CURATOR_INSTRUCTION] : []),
     FORMAT_INSTRUCTION(skills),
     "",
     "Current MEMORY.md:",
@@ -145,7 +154,50 @@ export function buildReflectionPrompt(memoryHead: string, digest: string, skills
     "",
     "Recent conversation digest (oldest first):",
     digest || "(nothing recent)",
+    ...(skills && curator ? ["", curator] : []),
   ].join("\n");
+}
+
+/**
+ * The curator's view of one agent's skills: a bounded usage line per active skill, then the full current text of agent
+ * skills loaded since `sinceMs` (whole bodies only, newest first, within a cap). `shown` names the agent skills whose
+ * text was included; only those may be revised, so a revision is never written blind.
+ */
+export function buildSkillUsageSummary(skills: SkillCatalogue, botId: string, sinceMs: number): { text: string; shown: Set<string> } {
+  const usage = new Map(skills.usage(botId).map((u) => [u.id, u]));
+  const entries = skills.list(botId).filter((s) => s.availability === "available");
+  const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const lines: string[] = [];
+  let used = 0;
+  for (const s of entries.slice(0, USAGE_MAX_ENTRIES)) {
+    const u = usage.get(s.id);
+    const loads = !u ? "never loaded" : `${u.loadCount >= OFTEN_LOADS ? "often" : "rarely"} loaded ${u.loadCount} time${u.loadCount === 1 ? "" : "s"}, last ${day(u.lastLoadedAt)}`;
+    const name = s.name.replace(/\s+/g, " ").slice(0, 80);
+    const line = s.source === "agent" ? `- ${s.slug} (agent, version ${s.version}) "${name}": ${loads}` : `- ${s.id} (shared, report only) "${name}": ${loads}`;
+    if (used + line.length + 1 > USAGE_MAX_CHARS) break;
+    lines.push(line);
+    used += line.length + 1;
+  }
+  if (entries.length > lines.length) lines.push(`(+${entries.length - lines.length} more skills not listed)`);
+  const recent = entries
+    .filter((s) => s.source === "agent" && (usage.get(s.id)?.lastLoadedAt ?? 0) >= sinceMs)
+    .sort((a, b) => usage.get(b.id)!.lastLoadedAt - usage.get(a.id)!.lastLoadedAt);
+  const shown = new Set<string>();
+  const bodies: string[] = [];
+  let budget = SHOWN_BODIES_MAX_CHARS;
+  for (const s of recent) {
+    const skill = skills.load(botId, s.id);
+    if (!skill || skill.body.length > budget) continue;
+    budget -= skill.body.length;
+    shown.add(skill.slug);
+    bodies.push(`--- ${skill.slug} (version ${skill.version})`, skill.body.trimEnd(), "--- end");
+  }
+  const text = [
+    "Skill usage for this agent (skill_load counts):",
+    lines.length ? lines.join("\n") : "(no skills)",
+    ...(bodies.length ? ["", "Current text of agent skills loaded recently (only these may be revised):", ...bodies] : []),
+  ].join("\n");
+  return { text: getDefaultRedactor().redactString(text), shown };
 }
 
 type Extracted = { state: "empty" } | { state: "invalid" } | { state: "ok"; value: unknown };
@@ -207,8 +259,7 @@ export const normaliseMemoryText = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-function memoryLines(dataDir: string, botId: string): Set<string> {
-  const path = memoryPath(dataDir, botId);
+function noteLines(path: string): Set<string> {
   if (!existsSync(path)) return new Set();
   return new Set(readFileSync(path, "utf8").split(/\r?\n/).map(normaliseMemoryText).filter(Boolean));
 }
@@ -258,6 +309,11 @@ export function registerReflection(deps: ReflectionDeps): Reflection {
     }
   };
 
+  /** A curator proposal for this skill already waiting for the owner; the next night does not repeat it. */
+  const pendingCuratorProposal = (botId: string, slug: string) =>
+    db.prepare(`SELECT 1 FROM approvals WHERE status = 'pending' AND bot_id = ? AND tool_name IN (?, ?) AND json_extract(payload_json, '$.slug') = ? LIMIT 1`)
+      .get(botId, REFLECTION_SKILL_REVISE_TOOL, REFLECTION_SKILL_ARCHIVE_TOOL, slug) !== undefined;
+
   async function execute(runId: number, key: string, botId: string): Promise<void> {
     let status = "failed";
     let memoryCount = 0;
@@ -272,7 +328,8 @@ export function registerReflection(deps: ReflectionDeps): Reflection {
 
       const setting = getSetting(db, "reflection");
       const digest = buildDigest(db, Date.now() - setting.lookbackHours * 3_600_000);
-      const text = buildReflectionPrompt(readMemoryHead(dataDir, bot.id), digest, skillsEnabled);
+      const curator = skillsEnabled && deps.skills ? buildSkillUsageSummary(deps.skills, bot.id, Date.now() - setting.lookbackHours * 3_600_000) : undefined;
+      const text = buildReflectionPrompt(readMemoryHead(dataDir, bot.id), digest, skillsEnabled, curator?.text);
       const message = ledger.append(REFLECTION_ROOM_ID, "scheduler", "message", { text, scheduled: true });
 
       const outputs: string[] = [];
@@ -300,21 +357,47 @@ export function registerReflection(deps: ReflectionDeps): Reflection {
         if (!parsed.success) {
           status = "invalid";
         } else {
-          const existing = memoryLines(dataDir, bot.id);
+          const existing = noteLines(memoryPath(dataDir, bot.id));
+          const existingOwner = noteLines(ownerNotesPath(dataDir));
           const seen = new Set<string>();
           for (const proposal of parsed.data.proposals) {
-            if (proposal.kind === "memory_append") {
+            if (proposal.kind === "memory_append" || proposal.kind === "owner_note") {
+              const owner = proposal.kind === "owner_note";
               if (memoryCount >= setting.maxMemoryProposals) continue;
               const norm = normaliseMemoryText(proposal.text);
-              if (existing.has(norm) || seen.has(norm)) continue;
-              seen.add(norm);
-              appendMemoryNote(dataDir, bot.id, proposal.text);
+              const key = `${proposal.kind}:${norm}`;
+              if ((owner ? existingOwner : existing).has(norm) || seen.has(key)) continue;
+              // A secret or an over-cap owner note is skipped (it would reach every prompt or be truncated).
+              if (owner && ownerNoteRefusal(dataDir, proposal.text)) continue;
+              seen.add(key);
+              if (owner) appendOwnerNote(dataDir, proposal.text);
+              else appendMemoryNote(dataDir, bot.id, proposal.text);
               memoryCount++;
               try {
-                await commitMemoryOrThrow(dataDir, `memory: reflection save (${bot.id})`);
+                await commitMemoryOrThrow(dataDir, owner ? `owner notes: reflection save (${bot.id})` : `memory: reflection save (${bot.id})`);
               } catch {
                 throw new Error("reflection memory saved; history commit was not confirmed");
               }
+            } else if (proposal.kind === "skill_revise" || proposal.kind === "skill_archive") {
+              if (!curator || !deps.skills || skillCount >= setting.maxSkillProposals) continue;
+              const norm = `skill:${proposal.slug}`;
+              if (seen.has(norm)) continue;
+              // Only an active agent-owned skill; a revision only of a skill whose text the model was shown.
+              const current = deps.skills.load(bot.id, `agent:${bot.id}:${proposal.slug}`);
+              if (!current || (proposal.kind === "skill_revise" && (!curator.shown.has(proposal.slug) || proposal.body === current.body))) continue;
+              if (pendingCuratorProposal(bot.id, proposal.slug)) continue;
+              seen.add(norm);
+              skillCount++;
+              const base = { slug: current.slug, name: current.name };
+              approvals.request({
+                roomId: resolveDeliveryRoom(db, ledger) ?? REFLECTION_ROOM_ID,
+                botId: bot.id,
+                toolName: proposal.kind === "skill_revise" ? REFLECTION_SKILL_REVISE_TOOL : REFLECTION_SKILL_ARCHIVE_TOOL,
+                toolClass: "act-local",
+                payload: proposal.kind === "skill_revise"
+                  ? { ...base, description: current.description, body: proposal.body, reason: proposal.reason, baseVersion: current.version }
+                  : { ...base, reason: proposal.reason, baseVersion: current.version },
+              });
             } else {
               if (!skillsEnabled || skillCount >= setting.maxSkillProposals) continue;
               // Never propose over an existing skill: accepting would silently replace a trusted workflow.

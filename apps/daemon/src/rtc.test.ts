@@ -109,7 +109,8 @@ async function joinAs(opts: { kind: "pair" | "device"; key: string; device?: str
   channel.onMessage.subscribe((m) => {
     const f = JSON.parse(String(m)) as { id?: string; type?: string; status: number; seq: number; last: boolean; body: string; event?: unknown };
     if (f.type === "event") return void events.push(f.event);
-    const w = waiting.get(f.id!);
+    // A frame the daemon cannot parse is answered with id "x"; it belongs to the latest call.
+    const w = waiting.get(f.id!) ?? (f.id === "x" ? [...waiting.values()].at(-1) : undefined);
     if (!w) return;
     w.chunks[f.seq] = f.body;
     w.status = f.status;
@@ -340,6 +341,19 @@ describe("rtc service", () => {
     expect((await phone.call("GET", "/settings", h(a.token))).status).toBe(403); // not even reads: the topic lives there
     expect((await phone.call("POST", "/pair", h(a.token), JSON.stringify({ code: "AAAA-BBBB", name: "x" }))).status).toBe(403);
     expect((await phone.call("GET", "/rooms/../devices", h(a.token))).status).toBe(400);
+  });
+
+  test("history search and owner notes are readable over a device peer; owner notes cannot be written", async () => {
+    enable();
+    const full = auth.createDevice("laptop", undefined, "full");
+    const phone = (await joinAs({ kind: "device", key: sha(full.token), device: full.device.id }))!;
+    const h = { authorization: `Bearer ${full.token}` };
+    expect((await phone.call("GET", "/history/search?q=kiwi", h)).status).toBe(200);
+    expect((await phone.call("GET", "/owner-notes", h)).status).toBe(200);
+    expect((await phone.call("POST", "/owner-notes", h, JSON.stringify({ text: "- x" }))).status).toBe(403);
+    expect((await phone.call("POST", "/history/search", h, "{}")).status).toBe(403);
+    const put = await phone.call("PUT", "/owner-notes", h, JSON.stringify({ text: "- x" }));
+    expect(put).toEqual({ status: 400, body: "bad frame" });
   });
 
   test("MCP interaction routes do not expose the MCP protocol or administration",async()=>{

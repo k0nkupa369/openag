@@ -43,6 +43,7 @@ export const MCP_TOOL_NAMES = [
   "computer_open",
   "computer_shell",
   "memory_append",
+  "history_search",
   "openag_capabilities",
   "openag_help",
   "openag_status",

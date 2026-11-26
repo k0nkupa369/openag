@@ -18,6 +18,7 @@ import type { Pusher } from "../push.js";
 import { createComputerTools } from "./computer.js";
 import { createNotifyTool } from "./notify.js";
 import { memoryAppendTool } from "./memory.js";
+import { createHistorySearchTool } from "./history.js";
 import { createSkillTools } from "./skills.js";
 import type { SkillCatalogue } from "../skills.js";
 import { defaultToolDefs } from "./index.js";
@@ -35,7 +36,7 @@ export function createFirstPartyTools(deps: { avatars?: AvatarLibrary; db?: Db; 
   executors: ToolRegistry;
   capabilityGuidance(): string;
 } {
-  const extra = [...createAgentTools(), ...(deps.google?.tools ?? []), openagHelpTool, createOpenagStatusTool(deps.db), requestInputTool,...createComputerTools(deps.computer), createNotifyTool(deps.pusher), memoryAppendTool, ...createSkillTools(deps.db, deps.skills), createResultTool(deps.results)];
+  const extra = [...createAgentTools(), ...(deps.google?.tools ?? []), openagHelpTool, createOpenagStatusTool(deps.db), requestInputTool,...createComputerTools(deps.computer), createNotifyTool(deps.pusher), memoryAppendTool, createHistorySearchTool(deps.db),...createSkillTools(deps.db, deps.skills), createResultTool(deps.results)];
   extra.push(createWorkTool(deps.db), ...createAvatarTools(deps.avatars), ...createProposalTools(deps.proposals ?? (() => undefined)));
   const definitions = [...defaultToolDefs, ...extra];
   const catalogue = createCapabilityCatalogue(deps.db, () => definitions);

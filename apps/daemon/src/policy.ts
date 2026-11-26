@@ -20,7 +20,7 @@ export interface TurnRestrictions {
 /** Passive eligibility only. Execution still passes through decide/approvals and receipt guards. */
 export function turnToolRestriction(cls: ToolClass, mode: Mode, turn: TurnRestrictions, offlineSafe?:boolean): "isolated" | "offline" | "unattended" | null {
   if (turn.isolated) return "isolated";
-  if (turn.noNetwork && (cls === "search" || cls === "browse" || offlineSafe===false)) return "offline";
+  if (turn.noNetwork && ((cls === "search" && offlineSafe !== true) || cls === "browse" || offlineSafe===false)) return "offline";
   if (turn.unattended && !turn.allowApprovals && (!(cls === "read" || cls === "search" || cls === "browse") || mode !== "auto")) return "unattended";
   return null;
 }
@@ -74,6 +74,8 @@ const TOOL_NAME_CLASSES: Record<string, ToolClass> = {
   write_file: "act-local",
   // Agent-facing MEMORY write (tools/memory.ts): asks by default, like every act-local tool.
   memory_append: "act-local",
+  // Local full-text read of the agent's own conversations (tools/history.ts); offline-safe.
+  history_search: "search",
   openag_capabilities: "read",
   openag_help: "read",
   openag_status: "read",
@@ -84,6 +86,8 @@ const TOOL_NAME_CLASSES: Record<string, ToolClass> = {
   // Nightly reflection proposals (reflection-schema.ts). Classified so the approval carries an honest class.
   reflection_memory: "act-local",
   reflection_skill: "act-local",
+  reflection_skill_revise: "act-local",
+  reflection_skill_archive: "act-local",
   edit_file: "act-local",
   run_shell: "act-external",
   send_message: "act-external",

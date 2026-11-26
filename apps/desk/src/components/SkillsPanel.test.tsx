@@ -27,6 +27,8 @@ function makeApi(overrides: Partial<Record<string, unknown>> = {}) {
     listBots: vi.fn(async () => ({ bots })),
     listSkills: vi.fn(async (id: string) => ({ skills: id === "boss" ? bossSkills : [] })),
     getSkill: vi.fn(async () => ({ skill: bossSkill })),
+    listArchivedSkills: vi.fn(async () => ({ skills: [] })),
+    getSkillUsage: vi.fn(async () => ({ usage: [] })),
     ...overrides,
   } as unknown as Api & {
     listBots: ReturnType<typeof vi.fn>;
@@ -102,6 +104,46 @@ describe("SkillsPanel", () => {
     render(<SkillsPanel api={api} />);
     await flush();
     expect(screen.getByRole("alert").textContent).toContain("Cannot reach the daemon");
+  });
+});
+
+describe("SkillsPanel archived skills", () => {
+  const archived = { id: "agent:boss:old-report", slug: "old-report", name: "Old report", description: "Monthly numbers", version: 2, reason: "Not loaded since August", archivedAt: 1_764_000_000_000, loadCount: 0, lastLoadedAt: null };
+
+  it("lists archived skills with their reason, and Restore brings one back for an owner", async () => {
+    let restored = false;
+    const api = makeApi({
+      whoami: vi.fn(async () => ({ kind: "owner" })),
+      getSkillCatalogue: vi.fn(async () => ({ skills: restored ? [...bossSkills, { slug: "old-report", name: "Old report", description: "Monthly numbers", version: 2 }] : bossSkills })),
+      listArchivedSkills: vi.fn(async () => ({ skills: restored ? [] : [archived] })),
+      restoreSkill: vi.fn(async () => { restored = true; return { skills: [] }; }),
+    });
+    render(<SkillsPanel api={api} botId="boss" />);
+    const section = await screen.findByRole("region", { name: "Archived skills" });
+    expect(api.listArchivedSkills).toHaveBeenCalledWith("boss");
+    expect(section.textContent).toContain("Old report");
+    expect(section.textContent).toContain("Not loaded since August");
+    expect(section.textContent).toContain("Archived");
+    fireEvent.click(screen.getByRole("button", { name: "Restore Old report" }));
+    await flush(); await flush();
+    expect((api as unknown as { restoreSkill: ReturnType<typeof vi.fn> }).restoreSkill).toHaveBeenCalledWith("boss", "old-report");
+    expect(screen.queryByRole("region", { name: "Archived skills" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Preview Old report/ })).toBeTruthy();
+  });
+
+  it("shows archived skills to a Limited device without Restore", async () => {
+    const api = makeApi({ listArchivedSkills: vi.fn(async () => ({ skills: [archived] })) });
+    render(<SkillsPanel api={api} botId="boss" />);
+    await screen.findByRole("region", { name: "Archived skills" });
+    expect(screen.queryByRole("button", { name: "Restore Old report" })).toBeNull();
+  });
+
+  it("shows when each skill was last used", async () => {
+    const api = makeApi({ listSkills: vi.fn(async () => ({ skills: [{ ...bossSkills[0], id: "agent:boss:weekly-report", source: "agent" }] })), getSkillUsage: vi.fn(async () => ({ usage: [{ id: "agent:boss:weekly-report", loadCount: 4, lastLoadedAt: Date.UTC(2026, 10, 12, 12) }] })) });
+    render(<SkillsPanel api={api} botId="boss" />);
+    await screen.findByText("Weekly report");
+    await flush();
+    expect(screen.getByText(/last used/i).textContent).toMatch(/2026/);
   });
 });
 

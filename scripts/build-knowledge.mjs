@@ -2,7 +2,7 @@
 import { readFileSync, lstatSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { handbookSchema, handbookVersion, HELP_INDEX_MAX } from '../apps/daemon/dist/knowledge.js';
+import { handbookSchema, handbookVersion, HELP_INDEX_MAX, HELP_TOPICS_MAX } from '../apps/daemon/dist/knowledge.js';
 
 const root = new URL('../', import.meta.url);
 const source = new URL('docs/help/', root);
@@ -12,7 +12,7 @@ const read = url => {
   return readFileSync(url, 'utf8');
 };
 const manifest = JSON.parse(read(new URL('manifest.json', source)));
-if (!Array.isArray(manifest) || manifest.length > 16) throw Error('Invalid handbook manifest');
+if (!Array.isArray(manifest) || manifest.length > HELP_TOPICS_MAX) throw Error('Invalid handbook manifest');
 const topics = handbookSchema.parse(manifest.map(entry => {
   if (!/^[a-z0-9-]{1,40}$/.test(entry.slug)) throw Error('Invalid topic ID');
   return { ...entry, body: read(new URL(entry.slug + '.md', source)) };

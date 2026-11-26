@@ -16,7 +16,7 @@ export type BotSettingSection = typeof BOT_SETTING_SECTIONS[number];
 
 export type Route =
   | { kind: "home" }
-  | { kind: "room"; roomId: string; workId?: string; panelTab?: RoomPanelTab; setting?: BotSettingSection }
+  | { kind: "room"; roomId: string; workId?: string; panelTab?: RoomPanelTab; setting?: BotSettingSection; /** Event id the transcript opens at (history search). */ messageId?: number }
   | { kind: "work"; workId?: string }
   | { kind: "settings"; section?: SettingsSection; tab?: ProactiveTab }
   | { kind: "computer" }
@@ -39,10 +39,13 @@ export function parseHash(hash: string): Route {
   switch (parts[0]) {
     case "room": {
       if (!parts[1]) return {kind: "home"};
-      const workId = parts[2] === "work" ? parts[3] : undefined, offset = workId ? 4 : 2;
+      const workId = parts[2] === "work" ? parts[3] : undefined;
+      let offset = workId ? 4 : 2;
+      const messageId = parts[offset] === "message" && /^[1-9]\d{0,15}$/.test(parts[offset + 1] ?? "") ? Number(parts[offset + 1]) : undefined;
+      if (messageId) offset += 2;
       const panelTab = parts[offset] === "panel" && ROOM_PANEL_TABS.includes(parts[offset + 1] as RoomPanelTab) ? parts[offset + 1] as RoomPanelTab : undefined;
       const setting = panelTab === "settings" && BOT_SETTING_SECTIONS.includes(parts[offset + 2] as BotSettingSection) ? parts[offset + 2] as BotSettingSection : undefined;
-      return {kind: "room", roomId: parts[1], ...(workId ? {workId} : {}), ...(panelTab ? {panelTab} : {}), ...(setting ? {setting} : {})};
+      return {kind: "room", roomId: parts[1], ...(workId ? {workId} : {}), ...(messageId ? {messageId} : {}), ...(panelTab ? {panelTab} : {}), ...(setting ? {setting} : {})};
     }
     case "work":
       return { kind: "work", ...(parts[1] ? { workId: parts[1] } : {}) };
@@ -73,7 +76,7 @@ export function hrefFor(route: Route): string {
     case "home":
       return "#/";
     case "room":
-      return `#/room/${encodeURIComponent(route.roomId)}${route.workId?`/work/${encodeURIComponent(route.workId)}`:""}${route.panelTab ? `/panel/${route.panelTab}${route.panelTab === "settings" && route.setting ? "/" + route.setting : ""}` : ""}`;
+      return `#/room/${encodeURIComponent(route.roomId)}${route.workId?`/work/${encodeURIComponent(route.workId)}`:""}${route.messageId?`/message/${route.messageId}`:""}${route.panelTab ? `/panel/${route.panelTab}${route.panelTab === "settings" && route.setting ? "/" + route.setting : ""}` : ""}`;
     case "settings":
       return route.section ? `#/settings/${route.section}${route.section === "proactive" && route.tab ? "/" + route.tab : ""}` : "#/settings";
     case "work":

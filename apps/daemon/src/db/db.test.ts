@@ -104,7 +104,7 @@ describe("migration numbering", () => {
     expect(hasTable(d, "web_push_subscriptions")).toBe(false);
     migrate(d, MIGRATIONS_DIR);
     expect(hasTable(d, "web_push_subscriptions")).toBe(true);
-    expect(versions(d).at(-1)).toEqual({ version: 44, name: "044_web_push.sql" });
+    expect(versions(d).find((r) => r.version === 44)).toEqual({ version: 44, name: "044_web_push.sql" });
     d.close();
   });
 

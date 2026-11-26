@@ -210,12 +210,14 @@ const wake = createWakeFilter({
 const proactive = createProactive({ db, ledger, runner, wake, tz, connected: () => mcp.status().some(server => server.id === 'composio-connect' && server.state === 'connected' && server.offerToAgents), fallback: createModelHeartbeat({ db, ledger, runner, tz, wake }) });
 proactive.register(scheduler);
 registerBrief({ db, ledger, scheduler, tz,readableScopes:()=>responsibilitiesRef.current?.readableScopes()??[] });
-const reflection = registerReflection({ db, ledger, approvals, runner, scheduler, tz, dataDir, skillsEnabled: true });
+const reflection = registerReflection({ db, ledger, approvals, runner, scheduler, tz, dataDir, skillsEnabled: true, skills });
 // Applies approved skills and legacy memory approvals; new reflection memory saves in reflection.ts.
 const reflectionApplier = createReflectionApplier({
   ledger,
   approvals,
   dataDir,
+  skills,
+  skillsChanged: () => acp.invalidateSessions(),
   // SkillError propagates: the applier records it as an error event and nothing is half-written.
   saveSkill: async (botId, skill) => {
     saveSkill(dataDir, botId, skill);

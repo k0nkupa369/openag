@@ -313,9 +313,10 @@ function Workspace({
     case "room":
       content = (
         <RoomView
-          key={route.roomId}
+          key={`${route.roomId}:${route.messageId ?? ""}`}
           api={api}
           roomId={route.roomId}
+          messageId={route.messageId}
           selectedWorkId={route.workId}
           panelTab={route.panelTab}
           selectedSetting={route.setting}
@@ -341,7 +342,7 @@ function Workspace({
     case "settings":
       content =
         route.section === "profile" ? (
-          <ProfileSettings canManage={identity?.kind === "owner" || identity?.access === "full"} />
+          <ProfileSettings api={api} canManage={identity?.kind === "owner" || identity?.access === "full"} />
         ) : route.section === "devices" ? (
           <DevicesPage api={api} onSignOut={onSignOut} identity={identity} onIdentityChange={updateIdentity} deviceNotice={deviceNotice} />
         ) : route.section === "proactive" ? (
@@ -382,6 +383,7 @@ function Workspace({
     <NewBotSheet api={api} identity={identity} onCreated={bot => { window.location.hash = hrefFor({ kind: "bots", botId: bot.id }); }}>
     <NewRoomSheet api={api} identity={identity} bots={bots} onCreated={room => { window.location.hash = hrefFor({ kind: "room", roomId: room.id }); }}>
     <Shell
+      api={api}
       rooms={rooms}
       route={route}
       bots={bots}

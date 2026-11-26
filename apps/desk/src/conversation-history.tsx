@@ -30,13 +30,21 @@ function updateState(state:ConversationState, event:LedgerEvent):ConversationSta
   return {throughId:event.id,runningTurns,work};
 }
 
-/** One owner for recent history, older pages, and gap-safe reconnect synchronization. */
-export function useLedger(api:Api,roomId:string) {
+/** Context above a search hit so the reader sees what led to it. */
+const ANCHOR_OFFSET=96;
+
+/**
+ * One owner for recent history, older pages, and gap-safe reconnect synchronization.
+ * With `messageId` the first read is the page ending at that event, followed by every later event, so the
+ * window stays contiguous for live updates; the cache is bypassed and the reader lands on the message.
+ */
+export function useLedger(api:Api,roomId:string,messageId?:number) {
   const cache = useContext(Cache);
   const {subscribe} = useStream();
   const [history] = useState<History>(()=>{
-    const saved=cache?.get(roomId)?.history;
-    return saved??{events:[],activityRowIds:{},before:null,cursor:0,ready:false,state:{throughId:0,runningTurns:[],work:[]}};
+    const saved=messageId===undefined?cache?.get(roomId)?.history:undefined;
+    return saved??{events:[],activityRowIds:{},before:null,cursor:0,ready:false,state:{throughId:0,runningTurns:[],work:[]},
+      ...(messageId!==undefined?{position:{messageId:`event-${messageId}`,offset:ANCHOR_OFFSET}}:{})};
   });
   const [snapshot,setSnapshot] = useState(()=>({...history}));
   const [error,setError] = useState<string|null>(null);
@@ -74,16 +82,23 @@ export function useLedger(api:Api,roomId:string) {
           let page:TranscriptPage;
           const incoming:LedgerEvent[]=[];
           const initial=!history.ready;
-          let cursor=history.cursor;
+          let cursor=history.cursor,earlier:number|null=null,first=initial;
+          if(initial&&messageId!==undefined){
+            const opening=await api.transcript(roomId,{before:messageId+1});
+            if(cancelled)return;
+            incoming.push(...opening.events);
+            earlier=opening.before;cursor=messageId;first=false;
+          }
           do{
-            page=await api.transcript(roomId,initial&&incoming.length===0?{}:{after:cursor});
+            page=await api.transcript(roomId,first?{}:{after:cursor});
+            first=false;
             if(cancelled)return;
             incoming.push(...page.events);
             cursor=page.after;
           }while(page.hasMore&&!cancelled);
           // A reconnect batch is one history update, not a replay of live output.
           accept({...page,events:incoming});
-          if(initial) history.before=page.before;
+          if(initial) history.before=messageId!==undefined?earlier:page.before;
           history.cursor=cursor;
           history.ready=true;
           publish();
@@ -121,6 +136,6 @@ export function useLedger(api:Api,roomId:string) {
       let size=[...cache.values()].reduce((sum,item)=>sum+item.bytes,0);
       while(cache.size>5||size>10*1024*1024){const key=cache.keys().next().value!;size-=cache.get(key)!.bytes;cache.delete(key);}
     };
-  },[api,roomId,subscribe,cache,history,controls]);
+  },[api,roomId,messageId,subscribe,cache,history,controls]);
   return {...snapshot,error,loading,syncing,loadingOlder,retry,more,initialPosition,remember};
 }

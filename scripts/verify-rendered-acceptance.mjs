@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import { startFixture } from './bot-models-fixture.mjs';
@@ -18,6 +18,7 @@ import { PROPOSAL_KINDS } from '../apps/daemon/dist/tools/management.js';
 import { createProactive } from '../apps/daemon/dist/proactive.js';
 import { setSetting } from '../apps/daemon/dist/settings.js';
 import { createWakeFilter } from '../apps/daemon/dist/wake.js';
+import { createSkillCatalogue, saveSkill } from '../apps/daemon/dist/skills.js';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.OPENAG_PLAYWRIGHT_MODULE || 'playwright');
@@ -278,6 +279,46 @@ export const SCENARIOS = {
   },
 
   /** Sign-in redesign (0.7.0): unpaired join page, Full invite link, and a revoked device. */
+  /** Release 0.8 history search: the search command lists highlighted message hits and opens the conversation at one. */
+  async 'history-search'(h) {
+    const { db, ledger } = h.f;
+    createRoom(db, { id: 'archive', name: 'Archive planning', leadBotId: 'boss' }); addMember(db, 'archive', 'boss');
+    let hit;
+    for (let i = 1; i <= 120; i++) {
+      const user = ledger.append('archive', 'user', 'message', { text: i === 30 ? 'Decision: mirror the backups to the NAS every Sunday night.' : `Question ${i}: ` + 'routine context. '.repeat(1 + i % 3) });
+      if (i === 30) hit = user.id;
+      ledger.append('archive', 'boss', 'bot_output', { text: `Answer ${i}` });
+    }
+    const openSearch = async (page, v) => {
+      if (v.mobile) await page.getByRole('button', { name: /^Open navigation/ }).first().click();
+      await page.getByRole('button', { name: /^Search/ }).first().click();
+      await page.getByRole('combobox').fill('mirror NAS');
+      await page.getByRole('option', { name: /mirror the backups/ }).waitFor();
+    };
+    await h.capture('history-search', 'results', '#/', {
+      act: openSearch,
+      check: async page => {
+        const option = page.getByRole('option', { name: /mirror the backups/ });
+        assert.ok(await option.isVisible(), 'message hit listed');
+        assert.deepEqual(await option.locator('mark').allTextContents(), ['mirror', 'NAS'], 'matched words highlighted');
+        assert.ok((await option.textContent()).includes('Archive planning'), 'labelled with its conversation');
+      },
+    });
+    await h.capture('history-search', 'no-match', '#/', {
+      variants: VARIANTS.slice(0, 1),
+      act: async page => { await page.keyboard.press('Control+k'); await page.getByRole('combobox').fill('zebra'); await page.getByText('No messages match.').waitFor(); },
+      check: async page => assert.ok(await page.getByText('No messages match.').isVisible(), 'empty search says so'),
+    });
+    await h.capture('history-search', 'opened', '#/', {
+      act: async (page, v) => { await openSearch(page, v); await page.getByRole('option', { name: /mirror the backups/ }).click(); await page.waitForURL(new RegExp(`#/room/archive/message/${hit}$`)); await page.waitForTimeout(800); },
+      check: async page => {
+        const target = page.locator('[role="log"] [role="article"]', { hasText: 'Decision: mirror the backups' });
+        assert.ok(await target.isVisible(), 'lands on the matching message');
+        assert.ok(await page.getByText('Answer 29', { exact: true }).count() > 0 && await page.getByText('Answer 31', { exact: true }).count() > 0, 'earlier and later context loaded');
+        assert.ok(await page.getByRole('button', { name: 'Load earlier messages' }).count() > 0, 'older history remains reachable');
+      },
+    });
+  },
   async 'sign-in'(h) {
     await h.capture('sign-in', 'unpaired', '#/', { token: '', check: async page => { assert.ok(await page.getByRole('heading', { level: 1, name: 'Connect this device' }).isVisible(), 'page h1 names the sign-in'); assert.ok(await page.getByLabel('Device name').isVisible(), 'device name field'); } });
     const code = (await h.json('/devices/pairing-codes', 'POST', { access: 'full' }).catch(() => null))?.code;
@@ -325,6 +366,45 @@ export const SCENARIOS = {
     await h.capture('OA-462', 'image-after-reload', '#/settings/profile', { check: async page => assert.ok(await page.getByRole('button', { name: 'Remove image' }).isVisible(), 'saved image persists') });
     const limited = (await h.json('/devices', 'POST', { name: 'Limited phone' })).token;
     await h.capture('OA-460', 'limited-read-only', '#/settings/profile', { token: limited, check: async page => { assert.ok(await page.getByText('Full access is required to edit the profile.').isVisible()); assert.ok(await name(page).isDisabled(), 'name disabled'); } });
+    // 0.8 owner notes (T3b): list with per-note Remove, whole-file edit, Limited read-only.
+    const ownerNotes = page => page.getByRole('region', { name: 'Owner notes' });
+    const showNotes = async page => { await ownerNotes(page).scrollIntoViewIfNeeded(); };
+    await h.capture('R08-owner-notes', 'empty', '#/settings/profile', { act: showNotes, check: async page => assert.ok(await page.getByText('No owner notes yet').isVisible(), 'empty state') });
+    await h.json('/owner-notes', 'PUT', { text: '- 2026-11-20 Prefers short status updates in the morning\n- 2026-11-21 Works from Auckland (NZ time)\n- 2026-11-22 ' + 'A long standing preference that should wrap without widening the page. '.repeat(3) + '\n' });
+    await h.capture('R08-owner-notes', 'list', '#/settings/profile', { act: showNotes, check: async page => { assert.equal(await ownerNotes(page).getByRole('listitem').count(), 3, 'three notes'); assert.equal(await ownerNotes(page).getByRole('button', { name: /^Remove note:/ }).count(), 3, 'one Remove per note'); } });
+    await h.capture('R08-owner-notes', 'editing', '#/settings/profile', { act: async page => { await showNotes(page); await page.getByRole('button', { name: 'Edit notes' }).click(); await page.getByLabel('Owner notes text').scrollIntoViewIfNeeded(); }, check: async page => { assert.ok(await page.getByLabel('Owner notes text').isVisible(), 'textarea'); assert.ok(await page.getByRole('button', { name: 'Save notes' }).isDisabled(), 'Save disabled until changed'); } });
+    await h.capture('R08-owner-notes', 'limited-read-only', '#/settings/profile', { token: limited, act: showNotes, check: async page => { assert.equal(await ownerNotes(page).getByRole('listitem').count(), 3, 'Limited sees every note'); assert.equal(await ownerNotes(page).getByRole('button').count(), 0, 'no Remove or Edit'); assert.ok(await page.getByText('Full access is required to change owner notes.').isVisible()); } });
+  },
+
+  /** Release 0.8 skill curator: a revise approval shows a per-line diff; an archived skill is listed and restores. */
+  async 'skill-curator'(h) {
+    const dataDir = dirname(h.f.db.name);
+    const oldBody = "# Weekly review\n1. Collect the week's merged pull requests.\n2. Summarise them by area.\n3. Post the summary in the team room.";
+    const newBody = "# Weekly review\n1. Collect the week's merged pull requests and closed issues.\n2. Summarise them by area.\n3. Flag anything still waiting on review.\n4. Post the summary in the team room.";
+    saveSkill(dataDir, 'boss', { slug: 'weekly-review', name: 'Weekly review', description: 'Review the week', body: oldBody, triggers: [] });
+    saveSkill(dataDir, 'boss', { slug: 'old-report', name: 'Old monthly report', description: 'Monthly numbers', body: 'Old steps', triggers: [] });
+    createSkillCatalogue(h.f.db, dataDir).archive('boss', 'old-report', 1, 'Not loaded since August; the finance team now builds this report.');
+    createRoom(h.f.db, { id: 'curator', name: 'Curator', leadBotId: 'boss' }); addMember(h.f.db, 'curator', 'boss');
+    h.f.approvals.request({ roomId: 'curator', botId: 'boss', toolName: 'reflection_skill_revise', toolClass: 'act-local', payload: { slug: 'weekly-review', name: 'Weekly review', description: 'Review the week', body: newBody, reason: 'Two reviews this month missed closed issues and pending reviews.', baseVersion: 1 } });
+    await h.capture('skill-curator', 'revise-card', '#/room/curator', {
+      act: async page => { const change = page.getByRole('region', { name: 'Changes to Weekly review' }); await change.waitFor({ timeout: 5000 }); await change.scrollIntoViewIfNeeded(); },
+      check: async page => {
+        const change = page.getByRole('region', { name: 'Changes to Weekly review' });
+        assert.equal(await change.locator('[data-change="added"]').count(), 3, 'three added lines');
+        assert.equal(await change.locator('[data-change="removed"]').count(), 2, 'two removed lines');
+      },
+    });
+    const direct = await h.json('/rooms', 'POST', { id: 'dm-curator-boss', name: 'boss', kind: 'direct', members: ['boss'] });
+    const skills = `#/room/${encodeURIComponent(direct.room?.id ?? direct.id)}/panel/settings/skills`;
+    await h.capture('skill-curator', 'archived', skills, {
+      act: async page => { await page.getByRole('region', { name: 'Archived skills' }).scrollIntoViewIfNeeded(); },
+      check: async page => assert.ok(await page.getByRole('region', { name: 'Archived skills' }).getByRole('button', { name: 'Restore Old monthly report' }).isVisible(), 'Restore shown'),
+    });
+    await h.capture('skill-curator', 'restored', skills, {
+      variants: VARIANTS.slice(0, 1),
+      act: async page => { await page.getByRole('button', { name: 'Restore Old monthly report' }).click(); await page.getByRole('button', { name: /Preview Old monthly report/ }).waitFor({ timeout: 5000 }); },
+      check: async page => assert.equal(await page.getByRole('region', { name: 'Archived skills' }).count(), 0, 'archived section gone after restore'),
+    });
   },
 
   /** OA-459 saved reflection memory (Memories and Reflection) and OA-390 agent avatars (editor, rotation, expression). */

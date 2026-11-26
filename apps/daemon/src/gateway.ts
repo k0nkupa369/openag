@@ -74,7 +74,8 @@ import { ComputerError, NOT_RUNNING_MESSAGE, type Computer } from "./computer.js
 import type { ComputerRouter } from "./computer/router.js";
 import { createSkillCatalogue, SkillError, type SkillCatalogue } from "./skills.js";
 import { modelsStatus } from "./models.js";
-import { MEMORY_MAX_BYTES, readMemoryFull, writeMemoryFull } from "./memory.js";
+import { containsSecret, MEMORY_MAX_BYTES, OWNER_NOTES_MAX_BYTES, ownerNotesHeadCap, readMemoryFull, readOwnerNotesFull, writeMemoryFull, writeOwnerNotesFull } from "./memory.js";
+import { HISTORY_LIMIT_MAX, HISTORY_QUERY_MAX, searchHistory } from "./history.js";
 import { commitMemory } from "./datagit.js";
 import { RecallUnavailable, type VectorMemory } from "./vectors.js";
 import { readFileSync, realpathSync, statSync } from "node:fs";
@@ -849,6 +850,42 @@ export function createGateway(deps: GatewayDeps): Hono<AppEnv> {
     return c.json({ botId: bot.id, text: written });
   });
 
+  app.get("/history/search", (c) => {
+    const parsed = z.object({
+      q: z.string().max(HISTORY_QUERY_MAX).default(""),
+      room: z.string().min(1).max(200).optional(),
+      before: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+      limit: z.coerce.number().int().min(1).max(HISTORY_LIMIT_MAX).optional(),
+    }).strict().safeParse(c.req.query());
+    if (!parsed.success) return c.json({ error: "invalid search" }, 400);
+    // The same visibility rule as GET /rooms: every conversation except hidden `_` rooms.
+    const visible = listRooms(db).map((r) => r.id).filter((id) => !id.startsWith("_"));
+    const { q, room, before, limit } = parsed.data;
+    if (room !== undefined && !visible.includes(room)) return c.json({ error: "room not found" }, 404);
+    return c.json({ results: searchHistory(db, { query: q, rooms: room === undefined ? visible : [room], before, limit }) });
+  });
+
+  // Owner notes (installation-wide, in every agent's prompt). Any device reads; owner/Full writes, secret-free, capped,
+  // committed to the data repo and audited by length only. The desk removes a note by saving the edited text.
+  app.get("/owner-notes", (c) => {
+    const text = deps.dataDir ? readOwnerNotesFull(deps.dataDir) : "";
+    return c.json({ text, maxBytes: OWNER_NOTES_MAX_BYTES, headTokens: Math.ceil(text.length / 4), headCap: ownerNotesHeadCap() });
+  });
+
+  app.put("/owner-notes", async (c) => {
+    if (c.get("principal").kind !== "owner") return c.json({ error: "owner token required" }, 403);
+    if (!deps.dataDir) return c.json({ error: "owner notes are not available" }, 503);
+    const body = (await c.req.json().catch(() => null)) as { text?: unknown } | null;
+    if (typeof body?.text !== "string") return c.json({ error: "text must be a string" }, 400);
+    if (Buffer.byteLength(body.text, "utf8") > OWNER_NOTES_MAX_BYTES) return c.json({ error: `Owner notes are limited to ${OWNER_NOTES_MAX_BYTES} bytes` }, 400);
+    // Every agent reads these notes, so a secret is refused rather than saved redacted.
+    if (containsSecret(body.text)) return c.json({ error: "Owner notes cannot contain a secret. Remove it and save again." }, 400);
+    const written = writeOwnerNotesFull(deps.dataDir, body.text);
+    ledger.append("_system", "user", "config", { action: "owner_notes_edited", length: written.length });
+    void commitMemory(deps.dataDir, "owner notes: edited from the desk");
+    return c.json({ text: written });
+  });
+
   app.get("/memory/search", async (c) => {
     const q = (c.req.query("q") ?? "").trim().slice(0, 300);
     const botId = c.req.query("bot") ?? "";
@@ -1565,7 +1602,23 @@ export function createGateway(deps: GatewayDeps): Hono<AppEnv> {
   app.get("/bots/:id/skills", (c) => {
     const botId = c.req.param("id");
     if (!getBot(db, botId)) return c.json({ error: "bot not found" }, 404);
+    if (c.req.query("archived") === "1") return c.json({ skills: skills?.archived(botId) ?? [] });
     return c.json({ skills: skills?.list(botId) ?? [] });
+  });
+  app.post("/bots/:id/skills/:slug/restore", async (c) => {
+    if (c.get("principal").kind !== "owner") return c.json({ error: "owner token required" }, 403);
+    const botId = c.req.param("id"), slug = c.req.param("slug");
+    if (!getBot(db, botId)) return c.json({ error: "bot not found" }, 404);
+    if (!skills?.restore(botId, slug)) return c.json({ error: "archived skill not found" }, 404);
+    await deps.skillsChanged?.();
+    ledger.append("_system", "user", "config", { action: "skill_restored", botId, slug });
+    return c.json({ skills: skills.list(botId) });
+  });
+
+  app.get("/bots/:id/skill-usage", (c) => {
+    const botId = c.req.param("id");
+    if (!getBot(db, botId)) return c.json({ error: "bot not found" }, 404);
+    return c.json({ usage: skills?.usage(botId) ?? [] });
   });
 
   app.get("/bots/:id/skills/:slug", (c) => {

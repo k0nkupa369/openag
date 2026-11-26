@@ -8,12 +8,12 @@ import { InputGroup, InputGroupInput, InputGroupAddon } from "./ui/input-group";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "./ui/collapsible";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "./ui/empty";
 import { Skeleton } from "./ui/skeleton";
-import { ArrowLeft, ChevronRight, ChevronDown, RefreshCw, Search, Puzzle, FileText, Info } from "lucide-react";
+import { ArrowLeft, ChevronRight, ChevronDown, RefreshCw, Search, Puzzle, FileText, Info, ArchiveRestore } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Alert, AlertDescription } from "./ui/alert";
 import { useEffect, useId, useRef, useState } from "react";
 import { messageOf, type Api } from "../api";
-import type { BotInfo, Skill, SkillSummary } from "../types";
+import type { ArchivedSkill, BotInfo, Skill, SkillSummary } from "../types";
 
 export function SkillsPanel({ api, botId: scopedBotId }: { api: Api; botId?: string }) {
   const selectId = useId();
@@ -25,6 +25,8 @@ export function SkillsPanel({ api, botId: scopedBotId }: { api: Api; botId?: str
   const [chosen, setChosen] = useState("");
   const botId = scopedBotId ?? chosen;
   const [skills, setSkills] = useState<SkillSummary[] | null>(null);
+  const [archived, setArchived] = useState<ArchivedSkill[]>([]);
+  const [lastUsed, setLastUsed] = useState<Map<string, number>>(new Map());
   const [enabled, setEnabled] = useState(false);
   const [canManage, setCanManage] = useState(false);
   const [skill, setSkill] = useState<Skill | null>(null);
@@ -48,16 +50,17 @@ export function SkillsPanel({ api, botId: scopedBotId }: { api: Api; botId?: str
     try {
       const [who, library] = await Promise.all([api.whoami(), api.getSkillLibrary()]);
       const owner = who.kind === "owner" || who.access === "full";
-      const list = await (owner ? api.getSkillCatalogue(botId) : api.listSkills(botId));
+      const [list, archive, usage] = await Promise.all([owner ? api.getSkillCatalogue(botId) : api.listSkills(botId), api.listArchivedSkills(botId), api.getSkillUsage(botId)]);
       if (request !== requests.current) return;
-      setCanManage(owner); setEnabled(library.enabled); setSkills(list.skills); setUncertain(false);
+      setCanManage(owner); setEnabled(library.enabled); setSkills(list.skills); setArchived(archive.skills); setUncertain(false);
+      setLastUsed(new Map(usage.usage.map(row => [row.id, row.lastLoadedAt])));
     } catch (err) {
       if (request === requests.current) { setError(`${messageOf(err)} Refresh to check the saved state before trying again.`); setUncertain(true); }
     }
     finally { if (request === requests.current) setBusy(false); }
   }
   useEffect(() => {
-    setSkills(null); setUncertain(false); setQuery("");
+    setSkills(null); setArchived([]); setLastUsed(new Map()); setUncertain(false); setQuery("");
     if (botId) void refresh();
     return () => { requests.current++; detailRequests.current++; };
   }, [api, botId]);
@@ -140,7 +143,7 @@ export function SkillsPanel({ api, botId: scopedBotId }: { api: Api; botId?: str
               <div className="flex min-w-0 items-center gap-3 py-3">
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <Button variant="ghost" className="h-auto max-w-full justify-start self-start whitespace-normal px-0 py-1 text-left [overflow-wrap:anywhere]" aria-label={`Preview ${entry.name} (${id})`} disabled={busy || entry.availability === "invalid" || entry.availability === "missing"} onClick={() => void select(entry)}>{entry.name}<ChevronRight data-icon="inline-end" /></Button>
-                  <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{id}{entry.version != null && ` · v${entry.version}`}</p>
+                  <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{id}{entry.version != null && ` · v${entry.version}`}{lastUsed.has(id) && ` · last used ${formatDay(lastUsed.get(id)!)}`}</p>
                   <p className="line-clamp-2 text-sm text-muted-foreground [overflow-wrap:anywhere]">{entry.reason ?? entry.description}</p>
                 </div>
                 {entry.source === "shared" ? assignmentControl(entry) : <Badge variant="outline">Agent-owned</Badge>}
@@ -148,8 +151,26 @@ export function SkillsPanel({ api, botId: scopedBotId }: { api: Api; botId?: str
             </li>;
           })}</ul>
         </FieldSet>}
+        {archived.length > 0 && <section aria-label="Archived skills" className="flex min-w-0 flex-col gap-2">
+          <h3 className="flex items-center justify-between gap-3 text-sm font-medium"><span>Archived</span><Badge variant="secondary">{archived.length}</Badge></h3>
+          <ul className="flex min-w-0 flex-col">{archived.map((entry, index) => <li key={entry.id}>
+            {index > 0 && <Separator />}
+            <div className="flex min-w-0 items-center gap-3 py-3">
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium [overflow-wrap:anywhere]">{entry.name}<Badge variant="outline">Archived</Badge></p>
+                <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{entry.id} · v{entry.version} · archived {formatDay(entry.archivedAt)}</p>
+                <p className="line-clamp-2 text-sm text-muted-foreground [overflow-wrap:anywhere]">{entry.reason}</p>
+              </div>
+              {canManage && <Button variant="outline" size="sm" aria-label={`Restore ${entry.name}`} disabled={busy || uncertain} onClick={() => void change(() => api.restoreSkill(botId, entry.slug))}><ArchiveRestore data-icon="inline-start" />Restore</Button>}
+            </div>
+          </li>)}</ul>
+        </section>}
         <Collapsible><CollapsibleTrigger render={<Button variant="ghost" size="sm" className="justify-start" />}><Info data-icon="inline-start" />About skills<ChevronDown data-icon="inline-end" /></CollapsibleTrigger><CollapsibleContent><div className="pt-3"><p className="text-sm leading-relaxed text-muted-foreground">Shared packages start unassigned. OpenAg skill tools keep shared files read-only; other file and shell tools keep their own permissions. Loading a skill never approves its actions or runs its scripts. {canManage ? "Library changes affect all agents; assignments apply to this agent." : "A Full access device can change the library and assignments."}</p></div></CollapsibleContent></Collapsible>
       </>}
     </>}
   </div>;
+}
+
+function formatDay(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }

@@ -1,6 +1,6 @@
 import { protectScope } from "./effect-scope.js";
 import { canonical, createActionReceipts, type ActionReceipts } from "./action-receipts.js";
-import { MemoryPayloadSchema, SkillPayloadSchema } from "./reflection-schema.js";
+import { MemoryPayloadSchema, SkillPayloadSchema, SkillRevisePayloadSchema, REFLECTION_SKILL_REVISE_TOOL } from "./reflection-schema.js";
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db/index.js";
 import type { Ledger } from "./ledger.js";
@@ -106,11 +106,20 @@ const STATUS: Record<Decision["kind"], ApprovalStatus> = {
   ignore: "ignored",
 };
 
+/** A revise edit may change only the body, name and description; the target, base version and reason stay as proposed. */
+function validateReviseEdit(value: unknown, approval?: Approval) {
+  const edit = SkillRevisePayloadSchema.parse(value);
+  const stored = approval ? SkillRevisePayloadSchema.safeParse(approval.payload) : undefined;
+  if (!stored?.success || (edit.slug !== stored.data.slug || edit.baseVersion !== stored.data.baseVersion || edit.reason !== stored.data.reason))
+    throw new Error("An edit may change only the body, name and description. Respond to request a new proposal.");
+  return edit;
+}
+
 // Stored payloads are redacted, so an edited decision made on a redacted payload carries placeholders. That fails safe.
 export function createApprovals(db: Db, ledger: Ledger, redactor: Redactor = getDefaultRedactor()): Approvals {
   const receipts = createActionReceipts(db, ledger,redactor);
   let editValidator: (name: string) => ((args: unknown, approval?: Approval) => unknown) | undefined = () => undefined;
-  const validator = (name: string) => name === "reflection_memory" ? (v: unknown) => MemoryPayloadSchema.parse(v) : name === "reflection_skill" ? (v: unknown) => SkillPayloadSchema.parse(v) : editValidator(name);
+  const validator = (name: string) => name === "reflection_memory" ? (v: unknown) => MemoryPayloadSchema.parse(v) : name === "reflection_skill" ? (v: unknown) => SkillPayloadSchema.parse(v) : name === REFLECTION_SKILL_REVISE_TOOL ? validateReviseEdit : editValidator(name);
   const view = (row: Row): Approval => ({...toApproval(row),canEdit:!!validator(row.tool_name)});
   const waiters = new Map<string, { promise: Promise<Decision>; settle: (d: Decision) => void }>();
 

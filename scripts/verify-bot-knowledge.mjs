@@ -15,7 +15,7 @@ const { Client } = await import(require.resolve('@modelcontextprotocol/sdk/clien
 const { StreamableHTTPClientTransport } = await import(require.resolve('@modelcontextprotocol/sdk/client/streamableHttp.js'));
 const { agent, methods } = await import(require.resolve('@agentclientprotocol/sdk/unstable'));
 const { MockLanguageModelV3 } = await import(require.resolve('ai/test'));
-const { loadKnowledge, knowledge, HELP_INDEX_MAX, HELP_TOPIC_MAX } = await load('knowledge');
+const { loadKnowledge, knowledge, HELP_INDEX_MAX, HELP_TOPIC_MAX, HELP_TOPICS_MAX } = await load('knowledge');
 const { openDb } = await load('db/index'), { createLedger } = await load('ledger');
 const { createApprovals } = await load('approvals'), { createRunner } = await load('runtimes/runner');
 const rooms = await load('rooms'), { setSetting, getSetting } = await load('settings');
@@ -33,6 +33,9 @@ try {
   const bundle = JSON.parse(readFileSync(root + 'apps/daemon/dist/knowledge.json', 'utf8'));
   assert.match(knowledge.load('memory-skills').body, /saves validated memory notes automatically, without approval/);
   assert.match(knowledge.load('memory-skills').body, /delete the unwanted text in Saved memory/);
+  assert.match(knowledge.load('memory-skills').body, /Agents cannot write owner notes/);
+  assert.doesNotMatch(knowledge.load('memory-skills').body, /owner_note_append/);
+  assert.match(knowledge.load('overview').body, /Owner notes section/);
   assert.match(knowledge.load('memory-skills').body, /New-skill changes still require accepted or validly edited approval/);
   assert.match(knowledge.load('proposals').body, /A proposal changes nothing/);
   assert.match(knowledge.load('proposals').body, /propose_proactive/);
@@ -67,7 +70,11 @@ try {
   assert.match(knowledge.load('conversation-forks').body,/Existing forked conversations remain available/);
   assert.match(knowledge.load('approvals').body,/Local shell search includes `rg`/);
 
-  assert.equal(bundle.topics.length, 16);
+  assert.equal(HELP_TOPICS_MAX, 24);
+  assert.ok(bundle.topics.length <= HELP_TOPICS_MAX);
+  // Room for two more topics, each a 20-character slug with a full 100-character summary.
+  const indexRoom = HELP_INDEX_MAX - Buffer.byteLength(knowledge.index());
+  assert.ok(indexRoom >= 2 * (20 + 2 + 100 + 1), `help index has ${indexRoom} bytes left; shorten summaries`);
   // A cross-reference must name a slug openag_help accepts, in backticks: "the `computer-connectors` help topic".
   // Naming a topic by its title or bare slug ("the MCP servers topic", "the proposals topic") leaves bots guessing.
   const slugs = new Set(bundle.topics.map(t => t.slug));

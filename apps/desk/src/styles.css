@@ -409,6 +409,9 @@ nav[aria-label="Settings"] { scrollbar-width: none; }
 }
 
 /* The cue marks an available target, not an accepted upload. */
+/* A search hit is marked once on landing, then fades so it does not read as selected state. */
+.desk-search-hit { border-radius: var(--radius-lg); animation: desk-search-hit 2.4s var(--ease-house) both; }
+@keyframes desk-search-hit { 0%, 50% { background-color: color-mix(in oklab, var(--primary) 10%, transparent); } 100% { background-color: transparent; } }
 .desk-file-drop-cue { opacity: 0; }
 @media (hover: hover) and (pointer: fine) {
   .desk-file-drop-cue { transition: opacity 125ms var(--ease-house); }

@@ -26,6 +26,8 @@ The Playwright module must match the Chromium build in `PLAYWRIGHT_BROWSERS_PATH
 | OA-459 reflection memory | Saved notes in the agent's Memories section; Reflection panel. `verify-reflection-ui.mjs` also passes in Chromium |
 | OA-390 avatars | Agent settings, avatar editor, turned view with an expression |
 | Sign-in (0.7.0) | Unpaired join page, Full invite link, revoked device |
+| skill-curator (0.8) | Revise approval card with the per-line diff against the current version (3 added, 2 removed); Skills panel Archived section with Restore; restore end to end (desktop light) returns the skill to the active list |
+| history-search (0.8) | Search command message results with highlighted words (sidebar Search, phone via navigation); no-match text (Ctrl+K, desktop); opening a result lands on the message with earlier and later context and Load earlier |
 
 ## Defects found and fixed in this change
 

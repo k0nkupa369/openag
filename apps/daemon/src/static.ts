@@ -18,7 +18,7 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 // First path segments owned by the API. A file in the desk dir with one of these names must never shadow them.
-const API_SEGMENTS = new Set(["proactive", "turns", "dictation", "permissions", "avatars", "skills", "responsibilities", "composio-connect", "connectors", "app-library", "automation-runs", "questions", "work", "results", "rooms", "bots", "approvals", "health", "stream", "pair", "devices", "whoami", "settings", "wake", "digest", "brief", "automations", "hooks", "push", "mcp", "computer", "reflection", "apps", "router", "slack", "rtc", "backups", "ops", "readiness", "models", "memory"]);
+const API_SEGMENTS = new Set(["proactive", "turns", "dictation", "permissions", "avatars", "skills", "responsibilities", "composio-connect", "connectors", "app-library", "automation-runs", "questions", "work", "results", "rooms", "bots", "approvals", "health", "stream", "pair", "devices", "whoami", "settings", "wake", "digest", "brief", "automations", "hooks", "push", "mcp", "computer", "reflection", "apps", "router", "slack", "rtc", "backups", "ops", "readiness", "models", "memory", "history", "owner-notes"]);
 
 function tryRealpath(p: string): string | null {
   try {

@@ -652,6 +652,26 @@ export interface SkillSummary {
   version: number | null;
 }
 
+/** From GET /bots/:id/skills?archived=1. */
+export interface ArchivedSkill {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  version: number;
+  reason: string;
+  archivedAt: number;
+  loadCount: number;
+  lastLoadedAt: number | null;
+}
+
+/** From GET /bots/:id/skill-usage. */
+export interface SkillUsage {
+  id: string;
+  loadCount: number;
+  lastLoadedAt: number;
+}
+
 /** Full skill from GET /bots/:id/skills/:slug. */
 export interface Skill extends SkillSummary {
   resources?: string[];
@@ -704,6 +724,14 @@ export interface BotMemory {
   text: string;
   maxBytes: number;
   /** Rough size of the file in tokens, against the cap that goes into every prompt. */
+  headTokens: number;
+  headCap: number;
+}
+
+/** Mirrors GET /owner-notes: installation-wide notes about the owner that every agent sees. */
+export interface OwnerNotes {
+  text: string;
+  maxBytes: number;
   headTokens: number;
   headCap: number;
 }

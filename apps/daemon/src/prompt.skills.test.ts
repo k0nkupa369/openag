@@ -15,7 +15,7 @@ describe("buildPrompt skills", () => {
       [
         "Skills (repeatable workflows; load a source-qualified id with skill_load when it applies; skill_list finds assigned entries omitted here):",
         index,
-        "Facts about the user go to MEMORY (memory_append); repeatable step-by-step workflows go to skills (skill_save).",
+        "Facts about the owner become owner notes through nightly reflection or the owner's Profile page; your own working notes go to MEMORY (memory_append); repeatable step-by-step workflows go to skills (skill_save).",
       ].join("\n"),
     );
   });

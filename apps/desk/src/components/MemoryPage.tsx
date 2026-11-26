@@ -158,7 +158,7 @@ export function MemoryPage({ api, bot: scopedBot }: { api: Api; bot?: BotInfo })
             <ul data-slot="approval-cards" className="m-0 grid list-none gap-3 p-0">
               {proposals.filter(a => a.botId === botId).map((a) => (
                 <li key={a.id}>
-                  <ApprovalCard approval={a} onDecide={decide} />
+                  <ApprovalCard approval={a} api={api} onDecide={decide} />
                 </li>
               ))}
             </ul>
@@ -168,7 +168,7 @@ export function MemoryPage({ api, bot: scopedBot }: { api: Api; bot?: BotInfo })
 
       </>}
 
-      {scopedBot && proposals.filter(a => a.botId === botId).map(a => <ApprovalCard key={a.id} approval={a} onDecide={decide} />)}
+      {scopedBot && proposals.filter(a => a.botId === botId).map(a => <ApprovalCard key={a.id} approval={a} api={api} onDecide={decide} />)}
 
       <SettingsSection icon="memory" title="Search memory" description="Past threads and MEMORY.md for the selected bot.">
         <form className="my-2 flex flex-wrap items-end gap-2" onSubmit={(e) => void search(e)}>

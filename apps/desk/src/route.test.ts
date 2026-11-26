@@ -36,3 +36,17 @@ describe("hrefFor", () => {
     expect(hrefFor({ kind: "home" })).toBe("#/");
   });
 });
+
+describe("message anchors", () => {
+  it("a room route can point at one message and round-trips", () => {
+    expect(parseHash("#/room/ops/message/1234")).toEqual({ kind: "room", roomId: "ops", messageId: 1234 });
+    const route = { kind: "room" as const, roomId: "a b", messageId: 7 };
+    expect(hrefFor(route)).toBe("#/room/a%20b/message/7");
+    expect(parseHash(hrefFor(route))).toEqual(route);
+  });
+
+  it("ignores a malformed message id", () => {
+    expect(parseHash("#/room/ops/message/abc")).toEqual({ kind: "room", roomId: "ops" });
+    expect(parseHash("#/room/ops/message/0")).toEqual({ kind: "room", roomId: "ops" });
+  });
+});

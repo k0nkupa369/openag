@@ -31,6 +31,7 @@ import type { AutomationRun, WorkQuestion, ConversationRequest,
   WebPushInfo,
   WebPushSubscriptionView,
   BotMemory,
+  OwnerNotes,
   BotSettings,
   MemoryHit,
   ModelsStatus,
@@ -51,6 +52,8 @@ import type { AutomationRun, WorkQuestion, ConversationRequest,
   ReflectionDetail,
   Skill,
   SkillSummary,
+  ArchivedSkill,
+  SkillUsage,
   AppInfo,
   LibraryInventory,
   ConnectorStatus,
@@ -100,6 +103,8 @@ export interface Device {
 
 export type DeviceAccess = "limited" | "full";
 
+/** One `GET /history/search` hit. `highlights` are [start, end) UTF-16 offsets into the plain-text `snippet`. */
+export interface HistorySearchResult { eventId: number; roomId: string; roomTitle: string; actor: string; ts: number; snippet: string; highlights: [number, number][] }
 export type Whoami = { kind: "owner" } | { kind: "device"; deviceId: string; name: string; access?: DeviceAccess };
 
 export interface PairingCode {
@@ -143,6 +148,7 @@ export interface Api {
   /** Text fields need the owner; an avatar-only change works from any paired device. `avatar: null` resets it. */
   putBotSettings(id: string, patch: Partial<Pick<BotSettings, "name" | "description" | "instructions" | "avatar" | "maxSteps">>): Promise<{ bot: BotInfo }>;
   transcript(roomId:string, query?:{before?:number;after?:number}): Promise<TranscriptPage>;
+  historySearch(query: { q: string; room?: string; before?: number; limit?: number }, signal?: AbortSignal): Promise<{ results: HistorySearchResult[] }>;
   putBotHandle(id: string, handle: string): Promise<{ bot: BotInfo; changed: boolean }>;
   listEvents(roomId: string, after?: number): Promise<{ events: LedgerEvent[] }>;
   getAgentRequestManifests(roomId:string,id:string,before?:number):Promise<RequestPage>;
@@ -185,6 +191,9 @@ export interface Api {
   getBotMemory(id: string): Promise<BotMemory>;
   /** Owner only. Secrets are removed on save. */
   putBotMemory(id: string, text: string): Promise<{ botId: string; text: string }>;
+  getOwnerNotes(): Promise<OwnerNotes>;
+  /** Owner/Full only. Replaces the whole file; returns the redacted text that was saved. */
+  putOwnerNotes(text: string): Promise<{ text: string }>;
   /** 503 ApiError when embeddings are not available. */
   searchMemory(bot: string, q: string): Promise<{ results: MemoryHit[] }>;
   getWakeDecisions(limit?: number): Promise<{ decisions: WakeDecision[] }>;
@@ -274,6 +283,12 @@ export interface Api {
   getSkillCatalogue(botId: string): Promise<{ skills: SkillSummary[] }>;
   assignSkills(botId: string, ids: string[]): Promise<{ skills: SkillSummary[] }>;
   inspectSkill(botId: string, id: string): Promise<{ skill: Skill }>;
+  /** Archived agent-owned skills, newest archive first. */
+  listArchivedSkills(botId: string): Promise<{ skills: ArchivedSkill[] }>;
+  /** Owner/Full only. Returns the bot's active skills after the restore. */
+  restoreSkill(botId: string, slug: string): Promise<{ skills: SkillSummary[] }>;
+  /** Only skills loaded at least once appear. */
+  getSkillUsage(botId: string): Promise<{ usage: SkillUsage[] }>;
   /** Read-only listing of the Apps folder. Any device may read it. */
   getSetupReview(id: string): Promise<SetupReview>;
   getAppLibrary(): Promise<LibraryInventory>;
@@ -474,6 +489,7 @@ export function createApi(
     getBotSettings: (id) => request("GET", `/bots/${encodeURIComponent(id)}/settings`),
     putBotSettings: (id, patch) => request("PUT", `/bots/${encodeURIComponent(id)}/settings`, patch),
     transcript: (roomId, query = {}) => request("GET", withQuery(`${roomPath(roomId)}/transcript`,query)),
+    historySearch: (query, signal) => request("GET", withQuery("/history/search", query), undefined, true, signal),
     putBotHandle: (id: string, handle: string) => request<{ bot: BotInfo; changed: boolean }>("PUT", `/bots/${encodeURIComponent(id)}/handle`, { handle }),
     listEvents: (roomId, after = 0) => request("GET", `${roomPath(roomId)}/events?after=${after}`),
     getAgentRequestManifests:(roomId,id,before)=>request('GET',`${roomPath(roomId)}/agent-requests/${encodeURIComponent(id)}/request-manifests${before===undefined?'':`?before=${before}`}`),
@@ -534,6 +550,8 @@ export function createApi(
     sendWakeFeedback: (id) => request("POST", `/wake/decisions/${id}/feedback`, { verdict: "should_have_pinged" }),
     getBotMemory: (id) => request("GET", `/bots/${encodeURIComponent(id)}/memory`),
     putBotMemory: (id, text) => request("PUT", `/bots/${encodeURIComponent(id)}/memory`, { text }),
+    getOwnerNotes: () => request("GET", "/owner-notes"),
+    putOwnerNotes: (text) => request("PUT", "/owner-notes", { text }),
     searchMemory: (bot, q) => request("GET", `/memory/search?bot=${encodeURIComponent(bot)}&q=${encodeURIComponent(q)}`),
     getModelsStatus: () => request("GET", "/models/status"),
     getWakeDecisions: (limit) => request("GET", limit === undefined ? "/wake/decisions" : `/wake/decisions?limit=${limit}`),
@@ -598,6 +616,9 @@ export function createApi(
     getSkillCatalogue: botId => request("GET", `/skills?botId=${encodeURIComponent(botId)}`),
     assignSkills: (botId, ids) => request("PUT", `${skillsPath(botId)}/assignments`, { ids }),
     inspectSkill: (botId, id) => request("GET", `/skills/package?botId=${encodeURIComponent(botId)}&id=${encodeURIComponent(id)}`),
+    listArchivedSkills: botId => request("GET", `${skillsPath(botId)}?archived=1`),
+    restoreSkill: (botId, slug) => request("POST", `${skillsPath(botId)}/${encodeURIComponent(slug)}/restore`),
+    getSkillUsage: botId => request("GET", `/bots/${encodeURIComponent(botId)}/skill-usage`),
     getSetupReview: (id) => request("GET", `/app-library/setup/${encodeURIComponent(id)}`),
     getAppLibrary: () => request("GET", "/app-library"),
     getConnectors: () => request("GET", "/connectors"),

@@ -4,10 +4,13 @@ import { EvidenceBlock } from "./EvidenceBlock";
 import { Disclosure } from "./Disclosure";
 import { AvatarPreview } from "./AvatarPreview";
 import {useSessionDraft} from "../session-draft";
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { hrefFor } from "../route";
-import { messageOf } from "../api";
-import type { Approval, Decision } from "../types";
+import { messageOf, type Api } from "../api";
+import type { Approval, Decision, Skill } from "../types";
+import { lineDiff } from "../lib/line-diff";
+import { Skeleton } from "./ui/skeleton";
+import { TriangleAlert } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Textarea } from "./ui/textarea";
@@ -33,6 +36,7 @@ export function approvalAction(toolName: string): string {
   const labels: Record<string, string> = {
     write_file: "change a file", memory_append: "add to memory", skill_save: "save a skill",
     reflection_memory: "save a proposed memory", reflection_skill: "save a proposed skill",
+    reflection_skill_revise: "revise a skill", reflection_skill_archive: "archive a skill",
     create_work: "create Work", avatar_library_add: "add this avatar to the shared library",
   };
   return Object.hasOwn(labels, toolName) ? labels[toolName]! : `run ${toolName}`;
@@ -46,9 +50,48 @@ export function ProposalTarget({payload}: {payload: unknown}) {
 
 const CHANGE_LABELS: Record<string, string> = { name: "Name", scheduleCron: "Schedule", tz: "Time zone", roomId: "Room", botId: "Bot", prompt: "Prompt", allowApprovals: "Can ask for approvals", enabled: "On" };
 
+/** Proposed skill text compared line by line with the agent's current version, when it can be read. */
+function SkillRevision({ api, botId, slug, name, body, baseVersion }: { api?: Api; botId: string; slug: string; name: string; body: string; baseVersion: number }) {
+  const [current, setCurrent] = useState<Skill | "unavailable" | null>(api ? null : "unavailable");
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    setCurrent(null);
+    api.getSkill(botId, slug).then(({ skill }) => { if (!cancelled) setCurrent(skill); }, () => { if (!cancelled) setCurrent("unavailable"); });
+    return () => { cancelled = true; };
+  }, [api, botId, slug]);
+  if (current === null) return <Skeleton aria-label="Loading current version" className="h-24 w-full motion-reduce:animate-none" />;
+  const changes = current === "unavailable" ? null : lineDiff(current.body, body);
+  if (current === "unavailable" || !changes) return <EvidenceBlock className="my-2.5 in-data-[slot=approval-detail]:max-h-[440px]">{body}</EvidenceBlock>;
+  const mark = { same: " ", removed: "-", added: "+" } as const;
+  return <section aria-label={`Changes to ${name}`} className="flex min-w-0 flex-col gap-2">
+    {current.version !== baseVersion && <Alert><TriangleAlert /><AlertDescription>This skill changed after this proposal (now v{current.version}). Accepting will be refused; respond to ask for a new proposal.</AlertDescription></Alert>}
+    <p className="text-sm text-muted-foreground">Compared with the current version{current.version != null ? ` (v${current.version})` : ""}.</p>
+    <EvidenceBlock className="px-0 in-data-[slot=approval-detail]:max-h-[440px]">{changes.map((line, index) => <span key={index} data-change={line.kind} className="block pr-2.5 pl-[1.625rem] -indent-4 data-[change=added]:bg-[color-mix(in_oklab,var(--online)_12%,transparent)] data-[change=removed]:bg-[color-mix(in_oklab,var(--destructive)_12%,transparent)] data-[change=removed]:text-muted-foreground"><span aria-hidden="true" className="inline-block w-4 indent-0 select-none text-muted-foreground">{mark[line.kind]}</span><span className="sr-only">{line.kind === "same" ? "" : `${line.kind}: `}</span>{line.text}</span>)}</EvidenceBlock>
+  </section>;
+}
+
 /** Readable view of a nightly-reflection proposal. Returns null for any other tool or a malformed payload. */
-export function reflectionView(toolName: string, payload: unknown): ReactNode | null {
+export function reflectionView(toolName: string, payload: unknown, context?: { api?: Api; botId: string }): ReactNode | null {
   if (!isRecord(payload)) return null;
+  if (toolName === "reflection_skill_revise" && typeof payload.slug === "string" && typeof payload.name === "string" && typeof payload.body === "string" && typeof payload.baseVersion === "number") {
+    return (
+      <section aria-label="Proposed skill revision" className="flex min-w-0 flex-col gap-1">
+        <h3>Revise skill: {payload.name}</h3>
+        {typeof payload.reason === "string" && <p data-slot="reflection-text" className={REFLECTION_TEXT}>{payload.reason}</p>}
+        <SkillRevision api={context?.api} botId={context?.botId ?? ""} slug={payload.slug} name={payload.name} body={payload.body} baseVersion={payload.baseVersion} />
+      </section>
+    );
+  }
+  if (toolName === "reflection_skill_archive" && typeof payload.slug === "string" && typeof payload.name === "string") {
+    return (
+      <section aria-label="Proposed skill archive">
+        <h3>Archive skill: {payload.name}</h3>
+        {typeof payload.reason === "string" && <p data-slot="reflection-text" className={REFLECTION_TEXT}>{payload.reason}</p>}
+        <p data-slot="reflection-text" className={`${REFLECTION_TEXT} text-sm text-muted-foreground`}>Accepting removes <code>{payload.slug}</code> from this agent’s skills. Its files are kept and you can restore it on the Skills page.</p>
+      </section>
+    );
+  }
   if (toolName === "reflection_memory" && typeof payload.text === "string") {
     return (
       <section aria-label="Proposed memory">
@@ -167,8 +210,11 @@ export function ApprovalCard({
   inline = false,
   botName,
   canDecide = true,
+  api,
 }: {
   approval: Approval;
+  /** Lets a skill revision proposal read the current version to show what changes. */
+  api?: Api;
   onDecide: (id: string, decision: Decision) => Promise<void>;
   /** In the thread: "Waiting for you" header and a plain-English line, as in the design. */
   inline?: boolean;
@@ -186,7 +232,7 @@ export function ApprovalCard({
   const managementAction = management && isRecord(a.payload) && isRecord(a.payload.display) ? String(a.payload.display.action) : "";
   const proposer = botName ?? (management && isRecord(a.payload) && typeof a.payload.proposedBy === "string" ? a.payload.proposedBy : "The bot");
   const payload = useMemo(() => prettyPayload(a.payload), [a.payload]);
-  const reflection = useMemo(() => reflectionView(a.toolName, a.payload), [a.toolName, a.payload]);
+  const reflection = useMemo(() => reflectionView(a.toolName, a.payload, { api, botId: a.botId }), [a.toolName, a.payload, api, a.botId]);
   const [savedMode,setSavedMode]=useSessionDraft(a.id+":mode");
   const mode:Mode=savedMode==="edit"||savedMode==="respond"?savedMode:null;
   const setMode=(value:Mode)=>setSavedMode(value??"");

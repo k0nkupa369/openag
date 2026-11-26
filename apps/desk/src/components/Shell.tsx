@@ -1,8 +1,9 @@
 import { NewRoomTrigger } from "./NewRoomSheet";
 import { NewBotTrigger } from "./NewBotSheet";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { ChevronRight, Hash, Inbox, ListChecks, Monitor, Network, Settings, Zap } from "lucide-react";
-import { messageOf } from "../api";
+import { ChevronRight, Hash, Inbox, ListChecks, Monitor, Network, Search, Settings, Zap } from "lucide-react";
+import { messageOf, type Api } from "../api";
+import { HistorySearchGroup } from "./HistorySearch";
 import type { BotInfo } from "../types";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -16,7 +17,7 @@ import { SidebarList } from "./SidebarList";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar } from "./ui/sidebar";
 
-type ShellProps = Parameters<typeof ClassicShell>[0] & { identity?: Whoami | null; onOpenChat?: (bot: BotInfo) => Promise<void> };
+type ShellProps = Parameters<typeof ClassicShell>[0] & { identity?: Whoami | null; onOpenChat?: (bot: BotInfo) => Promise<void>; api?: Api };
 const PAGES: { label: string; route: Route; icon: typeof Inbox }[] = [
   { label: "Work", route: { kind: "work" }, icon: ListChecks },
   { label: "Computer", route: { kind: "computer" }, icon: Monitor },
@@ -38,11 +39,12 @@ export function Shell(props: ShellProps) {
   );
 }
 
-function DeskShell({ rooms, route, bots = [], connectorCount, identity, onOpenChat, children }: ShellProps) {
+function DeskShell({ rooms, route, bots = [], connectorCount, identity, onOpenChat, api, children }: ShellProps) {
   const { setOpenMobile } = useSidebar();
   const unreadCount=rooms.filter(room=>room.unread?.firstUnread).length;
   useEffect(() => setOpenMobile(false), [route, setOpenMobile]);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const chatOpening = useRef(false);
   const [chatError, setChatError] = useState<string | null>(null);
   async function openChat(bot: BotInfo) {
@@ -101,7 +103,10 @@ function DeskShell({ rooms, route, bots = [], connectorCount, identity, onOpenCh
       </SidebarHeader>
       <SidebarContent>
         {chatError && <Alert variant="destructive"><AlertDescription>{chatError}</AlertDescription></Alert>}
-        <SidebarGroup><SidebarGroupLabel>Workspace</SidebarGroupLabel><SidebarMenu>{PAGES.slice(0,2).map(pageItem)}</SidebarMenu></SidebarGroup>
+        <SidebarGroup><SidebarGroupLabel>Workspace</SidebarGroupLabel><SidebarMenu>
+          <SidebarMenuItem><SidebarMenuButton onClick={() => { setOpenMobile(false); setSearchOpen(true); }}><Search aria-hidden="true" /><span>Search</span><kbd className="ml-auto font-sans text-xs text-muted-foreground max-md:hidden">{/Mac|iP(hone|ad)/.test(navigator.platform) ? "⌘K" : "Ctrl K"}</kbd></SidebarMenuButton></SidebarMenuItem>
+          {PAGES.slice(0,2).map(pageItem)}
+        </SidebarMenu></SidebarGroup>
         <SidebarGroup><div className="flex items-center justify-between gap-2 pr-2"><SidebarGroupLabel>Rooms</SidebarGroupLabel><NewRoomTrigger onClick={() => setOpenMobile(false)} /></div><SidebarMenu>
           <SidebarList kind="rooms" items={rooms.filter((r) => r.kind !== "direct")}>{(r) => <>
             <SidebarMenuButton render={<a href={hrefFor({ kind: "room", roomId: r.id })} aria-current={activeRoom?.id === r.id ? "page" : undefined} />} isActive={activeRoom?.id === r.id} onClick={() => setOpenMobile(false)}>
@@ -142,11 +147,12 @@ function DeskShell({ rooms, route, bots = [], connectorCount, identity, onOpenCh
       </header>}
       <main id="desk-content" tabIndex={-1} className={`desk-content desk-content-${route.kind}`}>{children}</main>
     </div>
-    <CommandDialog open={searchOpen} onOpenChange={setSearchOpen} title="Search desk" description="Find a room, agent, or settings page.">
-      <Command><CommandInput aria-label="Search desk" placeholder="Find a room, agent, or page…" /><CommandList><CommandEmpty>No matches.</CommandEmpty>
+    <CommandDialog open={searchOpen} onOpenChange={setSearchOpen} title="Search desk" description="Find a room, agent, page or message.">
+      <Command><CommandInput aria-label="Search desk" placeholder={api ? "Search rooms, agents, pages and messages…" : "Find a room, agent, or page…"} value={searchQuery} onValueChange={setSearchQuery} /><CommandList>{!api && <CommandEmpty>No matches.</CommandEmpty>}
         <CommandGroup heading="Rooms">{rooms.map((r) => <CommandItem key={r.id} value={`room ${r.id}`} keywords={[r.name]} onSelect={() => navigate({ kind: "room", roomId: r.id })}><Hash />{r.name}</CommandItem>)}</CommandGroup>
         <CommandGroup heading="Agents">{bots.map((b) => <CommandItem key={b.id} value={`agent ${b.name} ${b.handle}`} onSelect={() => { if (onOpenChat) { setSearchOpen(false); void openChat(b); } else navigate(agentRoute(b.id)); }}><BotAvatar name={b.id} avatar={b.avatar} />{b.name} · @{b.handle}</CommandItem>)}</CommandGroup>
         <CommandGroup heading="Pages">{[...PAGES, { label: "Settings", route: { kind: "settings" } as Route, icon: Settings }, ...Object.entries(SETTINGS_NAMES).map(([section, label]) => ({ label, route: { kind: "settings", section } as Route, icon: Settings }))].map((p) => <CommandItem key={p.label} onSelect={() => navigate(p.route)}><p.icon />{p.label}</CommandItem>)}</CommandGroup>
+        {api && <HistorySearchGroup api={api} query={searchQuery} bots={bots} onOpen={(hit) => navigate({ kind: "room", roomId: hit.roomId, messageId: hit.eventId })} />}
       </CommandList></Command>
     </CommandDialog>
   </>;

@@ -61,11 +61,16 @@ Other remaining gates:
 - OA-330 Settings integration and branded providers: a fresh installed-Codex run with one reviewed temporary file write awaits owner authorization ([settings/README.md](docs/notes/settings/README.md)).
 - OA-307 TURN and reconnect for WebRTC: TURN reaches pairing phones, 7-day device credentials, reconnect on blips and resume, stale-attempt cleanup, relay diagnostics and interface binding. Lab-checked through a coturn relay, including from a second network where STUN alone failed ([webrtc.md](docs/notes/webrtc.md)). **Parked (owner, 12 Nov 2026):** public relay with a real phone on mobile data, iOS Safari and the installed PWA.
 - Web Push notifications for 0.6.0: built (end-to-end encrypted pushes to the installed desk, per-device subscriptions removed on revoke, ntfy kept alongside) with controlled tests and a real FCM delivery to Android Chrome, plus revoke ([web-push.md](docs/notes/web-push.md)). iOS, Mozilla and Apple push services are pending.
+- 0.8.0 History search, owner notes and skill curator ([spec](docs/specs/release-0.8-memory.md), [history-search.md](docs/notes/history-search.md), [owner-notes.md](docs/notes/owner-notes.md), [skills.md](docs/notes/skills.md)): controlled tests, rendered desktop/phone checks in Chromium, and a real Claude and Codex journey calling `history_search` twice in one session (26 Nov 2026). Remaining: a physical phone in Safari, a screen reader, and a real nightly reflection run that proposes an owner note, a skill revision or an archive.
 - OA-354 Live connector acceptance: Apple Mail, Calendar, Reminders and Notes passed; live Google acceptance is deferred and needs separate authority and a disposable target ([apple-live-acceptance.md](docs/notes/apple-live-acceptance.md)).
 
 ## Open
 
 Not yet built.
+
+**Planned releases** (draft specs)
+- 0.9 Telegram channel ([spec](docs/specs/release-0.9-telegram.md)).
+- 0.10 Talk mode and automation templates ([spec](docs/specs/release-0.10-desk.md)).
 
 **Memory, models and routing**
 - OA-347 Default bot management tools ([default-bot-management-design.md](docs/notes/default-bot-management-design.md)). Every v1 proposal kind is built: automations (with real Claude/Codex journeys), and in 0.7.5 the shared base, heartbeat/brief/reflection, delivery room, rooms (including removing a member), direct chats and responsibilities, with controlled tests and rendered card checks. A real API default bot journey (gpt-6-luna) covered every kind in one conversation and found a snapshot-comparison bug for API tool calls, now fixed. Not yet run: real Claude/Codex journeys for the new kinds. Responsibility proposals are refused until a mail source adapter exists (OA-368 is synthetic only).
@@ -84,7 +89,6 @@ Ideas kept out of scope on purpose:
 - Public App marketplace and code signing.
 - Replacing the ACP CLIs with a custom agent loop.
 - Making Composio a required dependency.
-- Help topic room: every topic must stay under the 12 KB `HELP_TOPIC_MAX`, and the handbook allows 16 topics, all now used. The next topic that fills up needs the topic limit raised (the 2 KB index limit, 1.8 KB used, is what bounds the prompt) or content moved to an existing topic.
 - Proactive pings that bypass the wake filter.
 - A second SQLite database or a client-side database. The daemon owns the only one.
 

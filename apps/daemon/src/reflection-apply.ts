@@ -6,9 +6,14 @@ import {
   MemoryPayloadSchema,
   REFLECTION_MEMORY_TOOL,
   REFLECTION_SKILL_TOOL,
+  REFLECTION_SKILL_ARCHIVE_TOOL,
+  REFLECTION_SKILL_REVISE_TOOL,
+  SkillArchivePayloadSchema,
   SkillPayloadSchema,
+  SkillRevisePayloadSchema,
   type SkillPayload,
 } from "./reflection-schema.js";
+import type { SkillCatalogue } from "./skills.js";
 
 /**
  * Applies approved skill proposals and legacy memory approvals still pending from older releases.
@@ -21,7 +26,13 @@ export interface ReflectionApplierDeps {
   dataDir: string;
   /** Writes a skill (OA-204). Absent: skill proposals are refused with an error event, never half-applied. */
   saveSkill?: (botId: string, skill: SkillPayload) => Promise<void> | void;
+  /** Skill curator revisions and archives. Absent: those proposals are refused, never half-applied. */
+  skills?: Pick<SkillCatalogue, "revise" | "archive">;
+  /** Called after a curator change so cached agent sessions pick up the new skill index. */
+  skillsChanged?: () => Promise<void> | void;
 }
+
+const APPLIED: ReadonlySet<string> = new Set([REFLECTION_MEMORY_TOOL, REFLECTION_SKILL_TOOL, REFLECTION_SKILL_REVISE_TOOL, REFLECTION_SKILL_ARCHIVE_TOOL]);
 
 export function createReflectionApplier(deps: ReflectionApplierDeps): { dispose(): void; idle(): Promise<void> } {
   let chain: Promise<unknown> = Promise.resolve();
@@ -54,6 +65,28 @@ export function createReflectionApplier(deps: ReflectionApplierDeps): { dispose(
       deps.approvals.receipts.start(approval.id,null,null);
       await deps.saveSkill(approval.botId, parsed.data);
       deps.approvals.receipts.finish(approval.id,{outcome:"completed",detail:"The daemon saved the reviewed skill change."});
+      return;
+    }
+    if (approval.toolName === REFLECTION_SKILL_REVISE_TOOL) {
+      const parsed = SkillRevisePayloadSchema.safeParse(raw);
+      if (!parsed.success) return fail(approval, "reflection skill revision is invalid; nothing written");
+      if (!deps.skills) return fail(approval, "skills are not available; nothing written");
+      // The stale check runs inside revise: a skill that changed after the proposal is refused.
+      deps.skills.revise(approval.botId, parsed.data);
+      deps.approvals.receipts.start(approval.id,null,null);
+      await commitMemory(deps.dataDir, `skills: reflection revise ${parsed.data.slug} (${approval.botId})`);
+      await deps.skillsChanged?.();
+      deps.approvals.receipts.finish(approval.id,{outcome:"completed",detail:"The daemon saved the reviewed skill revision as a new version."});
+      return;
+    }
+    if (approval.toolName === REFLECTION_SKILL_ARCHIVE_TOOL) {
+      const parsed = SkillArchivePayloadSchema.safeParse(raw);
+      if (!parsed.success) return fail(approval, "reflection skill archive proposal is invalid; nothing written");
+      if (!deps.skills) return fail(approval, "skills are not available; nothing written");
+      deps.skills.archive(approval.botId, parsed.data.slug, parsed.data.baseVersion, parsed.data.reason);
+      deps.approvals.receipts.start(approval.id,null,null);
+      await deps.skillsChanged?.();
+      deps.approvals.receipts.finish(approval.id,{outcome:"completed",detail:"The daemon archived the reviewed skill."});
     }
   }
 
@@ -62,7 +95,7 @@ export function createReflectionApplier(deps: ReflectionApplierDeps): { dispose(
     const id = (e.payload as { approvalId?: unknown } | null)?.approvalId;
     if (typeof id !== "string") return;
     const approval = deps.approvals.get(id);
-    if (!approval || (approval.toolName !== REFLECTION_MEMORY_TOOL && approval.toolName !== REFLECTION_SKILL_TOOL)) return;
+    if (!approval || !APPLIED.has(approval.toolName)) return;
     // Only an explicit accept/edit applies; ignore, respond and expiry (status ignored) never do.
     if (approval.status !== "accepted" && approval.status !== "edited") return;
     chain = chain.then(() => apply(approval)).catch((err: unknown) => fail(approval, err instanceof Error ? err.message : "apply failed"));

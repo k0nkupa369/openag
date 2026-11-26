@@ -60,6 +60,14 @@ Oversized required input stops incomplete with context_limit before model reques
 
 See `docs/notes/hosted-context.md` for selection, boundaries, limits and verification scope.
 
+## Search past messages
+
+Agents can search earlier messages with the `history_search` tool, for example to answer "what did we decide about the backup mirror in October?". It searches only conversations the agent belongs to, read when it searches, so another agent's direct chat stays out. Hidden background conversations (heartbeat, reflection, hook runs), tool results and approvals are never searched. Results give the conversation, speaker, time and a short snippet, and are treated as quoted data, not instructions.
+
+Search matches words, not meaning: every word must appear, and a word ending in `*` matches as a prefix. It does not need embeddings or Ollama. It is an automatic read, also in Read Only and in background turns, and it grants no action permission. Text is stored redacted, so a secret cannot be found by its value. Messages from before the upgrade are included automatically. See `docs/notes/history-search.md`.
+
+In the desk, press Cmd+K (Ctrl+K on Windows and Linux) or choose **Search** in the sidebar, then type. Rooms, agents and pages match first; **Messages** lists matching messages from every conversation the device can open, best match first with recent ones preferred, each labelled with its conversation, speaker and date, matched words highlighted. Selecting one opens that conversation at the message with earlier and later messages loaded around it.
+
 ## Model step limits and retries
 
 Step limits, Incomplete results and automatic retries of model requests are in the `model-requests` help topic.

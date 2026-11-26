@@ -79,10 +79,11 @@ export function createSkillTools(db?: Db, catalogue?: SkillCatalogue): ToolDef[]
       async execute(ctx, args: { slug: string; path?: string }) {
         const skills = forContext(ctx.dataDir);
         const result = args.path ? skills.resource(ctx.botId, args.slug, args.path) : skills.load(ctx.botId, args.slug);
+        if (result && !args.path) skills.recordLoad(ctx.botId, result.id);
         return result ? { found: true, untrusted: true, notice: NOTICE, ...(args.path ? { resource: result } : { skill: result }) } : { found: false };
       },
     },
-    { name: "skill_list", permission:()=>({approval:"allow"}),offlineSafe:true, effectScope:()=>({kind:'read'}),class: "read", description: "Find your assigned skills, including entries omitted from the prompt index. Set includeAvailable=true to discover shared packages before assignment. Results show package source and availability, not action permission or verified dependency readiness.",
+    { name: "skill_list", permission:()=>({approval:"allow"}),offlineSafe:true, effectScope:()=>({kind:'read'}),class: "read", description: "Find your assigned skills, including entries omitted from the prompt index. Set includeAvailable=true to discover shared packages before assignment. Results show package source and availability, not action permission or verified dependency readiness. Archived skills are left out.",
       input: z.object({ query: z.string().max(200).default(""), offset: z.number().int().min(0).max(1000).default(0), includeAvailable:z.boolean().default(false) }).strict(),
       async execute(ctx, args: { query: string; offset: number; includeAvailable:boolean }) {
         const query = args.query.toLowerCase();

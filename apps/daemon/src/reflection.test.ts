@@ -7,7 +7,7 @@ import { createApprovals, type Approvals } from "./approvals.js";
 import { ensureDataRepo } from "./datagit.js";
 import { type Db, openDb } from "./db/index.js";
 import { createLedger, type Ledger } from "./ledger.js";
-import { ensureMemoryFile, memoryPath } from "./memory.js";
+import { ensureMemoryFile, memoryPath, ownerNotesPath } from "./memory.js";
 import { createReflectionApplier } from "./reflection-apply.js";
 import { extractJson, registerReflection, REFLECTION_ROOM_ID, type Reflection } from "./reflection.js";
 import { addMember, createBot, createRoom } from "./rooms.js";
@@ -224,6 +224,52 @@ describe("memory saves automatically and skills require approval", () => {
     expect(memoryText()).toContain("Likes cats");
     expect(memoryText()).not.toContain("Lives in Auckland");
     expect(runRows()[0]).toMatchObject({ status: "finished", memory_proposals: 1 });
+  });
+
+  test("owner notes save automatically: shown to the turn, deduped, secrets refused, sharing the memory cap", async () => {
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(ownerNotesPath(dir), "- 2026-10-01 Lives in Auckland\n");
+    const secret = "sk-" + "a".repeat(30);
+    settingOf({ maxMemoryProposals: 2 });
+    register();
+    let prompt = "";
+    turnHook = (ctx) => {
+      prompt = ctx.prompt;
+      replyWith({
+        proposals: [
+          { kind: "owner_note", text: "lives in auckland" },
+          { kind: "owner_note", text: `Uses key ${secret}` },
+          { kind: "owner_note", text: "Prefers short answers" },
+          { kind: "memory_append", text: "Repo is open-ag" },
+          { kind: "owner_note", text: "Over the cap" },
+        ],
+      })(ctx);
+    };
+    await tickAt("03:30");
+    expect(prompt).toContain("Lives in Auckland");
+    const notes = readFileSync(ownerNotesPath(dir), "utf8");
+    expect(notes).toContain("Prefers short answers");
+    expect(notes.match(/auckland/gi)).toHaveLength(1);
+    expect(notes).not.toContain(secret);
+    expect(notes).not.toContain("Over the cap");
+    expect(memoryText()).toContain("Repo is open-ag");
+    expect(memoryText()).not.toContain("Prefers short answers");
+    expect(pending()).toHaveLength(0);
+    expect(runRows()[0]).toMatchObject({ status: "finished", memory_proposals: 2 });
+  });
+
+  test("an owner note that would push the file past its cap is skipped, never truncated", async () => {
+    const { writeFileSync } = await import("node:fs");
+    const { appendOwnerNote, OWNER_NOTES_MAX_BYTES } = await import("./memory.js");
+    const full = "- 2026-10-01 " + "x".repeat(OWNER_NOTES_MAX_BYTES - 30) + "\n";
+    writeFileSync(ownerNotesPath(dir), full);
+    expect(() => appendOwnerNote(dir, "A note that does not fit")).toThrow(/full/);
+    settingOf();
+    register();
+    turnHook = replyWith({ proposals: [{ kind: "owner_note", text: "A note that does not fit" }] });
+    await tickAt("03:30");
+    expect(readFileSync(ownerNotesPath(dir), "utf8")).toBe(full);
+    expect(runRows()[0]).toMatchObject({ status: "empty", memory_proposals: 0 });
   });
 
   test("skill proposals are dropped while skills are disabled", async () => {

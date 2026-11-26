@@ -37,7 +37,7 @@ import { Marker, MarkerContent } from "./ui/marker";
 
 
 
-export function Feed({ questions = [], onDismissQuestion, dismissingQuestionId, roomId, api, canManage = false, events, works = [], rooms = [], onOpenWork, bots = [], approvals = [], onDecide, loading = false, error = null, requests, onReply, runningBotIds, before, loadingOlder, onOlder, initialPosition, onPosition, onAtLatest, firstUnread, unreadStart, onSeenUnread, activityRowIds }: {
+export function Feed({ questions = [], onDismissQuestion, dismissingQuestionId, roomId, api, canManage = false, events, works = [], rooms = [], onOpenWork, bots = [], approvals = [], onDecide, loading = false, error = null, requests, onReply, runningBotIds, before, loadingOlder, onOlder, initialPosition, onPosition, onAtLatest, firstUnread, unreadStart, onSeenUnread, activityRowIds, highlightId }: {
   questions?:readonly WorkQuestion[];
   onDismissQuestion?:(question:WorkQuestion)=>Promise<void>;
   dismissingQuestionId?:string;
@@ -50,6 +50,8 @@ export function Feed({ questions = [], onDismissQuestion, dismissingQuestionId, 
   onPosition?:(position:ReadingPosition)=>void;
   onAtLatest?:()=>void;
   firstUnread?:number|null;
+  /** Event the reader opened at from search; marked once on landing. */
+  highlightId?:number;
   unreadStart?:number|null;
   onSeenUnread?:(id:number)=>void;
   roomId?:string;
@@ -117,7 +119,7 @@ export function Feed({ questions = [], onDismissQuestion, dismissingQuestionId, 
       <TranscriptViewport initialPosition={initialPosition} onPosition={onPosition} onAtLatest={onAtLatest} unreadStart={unreadStart} onSeenUnread={onSeenUnread}>
         <MessageScrollerContent className="mx-auto w-full max-w-[840px] p-8 max-[767px]:px-4 max-[767px]:py-5">
           {rows.length === 0 && before == null && !error && <Empty><EmptyHeader><EmptyTitle>Start a conversation</EmptyTitle><EmptyDescription>Your messages and agent activity will appear here.</EmptyDescription></EmptyHeader></Empty>}
-          {rows.map((row) => <MessageScrollerItem key={row.id} messageId={row.id}>
+          {rows.map((row) => <MessageScrollerItem key={row.id} messageId={row.id} className={highlightId !== undefined && row.event?.id === highlightId ? "desk-search-hit" : undefined}>
             {firstUnreadShown != null && row.event?.id===firstUnreadShown && <Marker variant="separator"><MarkerContent><Badge variant="attention">New messages</Badge></MarkerContent></Marker>}
             {row.activity ? <ActivityTrace api={api} canManage={canManage} events={row.activity} items={activity} bots={bots} /> : row.event && (() => {
               const event = row.event;
@@ -137,7 +139,7 @@ export function Feed({ questions = [], onDismissQuestion, dismissingQuestionId, 
                 {formatted && <MessageAvatar className="self-end mb-7 max-md:mb-11 pointer-coarse:mb-11"><BotAvatar name={avatarName} avatar={avatarBot?.avatar} size={32} still /></MessageAvatar>}
                 <MessageContent className={align === "end" ? "items-end" : undefined}>
                   {formatted && <MessageHeader>{bot?.name ?? event.actor}</MessageHeader>}
-                  {api && event.type === "mcp_interaction_updated" && typeof payload.interactionId === "string" ? <McpInteractionCard api={api} id={payload.interactionId} onChange={() => {}} /> : event.type === "avatar_preview" ? <AvatarPreview definition={payload.definition} previewId={typeof payload.previewId === "string" ? payload.previewId : undefined} /> : event.type === "avatar_library_updated" ? <p className="text-sm">Added {typeof payload.name === "string" ? payload.name : "avatar"} to the avatar library.</p> : api && event.type === "result_saved" && typeof payload.resultId === "string" && typeof payload.version === "number" && typeof payload.name === "string" ? <SavedResultButton api={api} id={payload.resultId} version={payload.version} name={payload.name}/> : pending && onDecide ? <ApprovalCard approval={pending} onDecide={onDecide} inline botName={bot?.name} />
+                  {api && event.type === "mcp_interaction_updated" && typeof payload.interactionId === "string" ? <McpInteractionCard api={api} id={payload.interactionId} onChange={() => {}} /> : event.type === "avatar_preview" ? <AvatarPreview definition={payload.definition} previewId={typeof payload.previewId === "string" ? payload.previewId : undefined} /> : event.type === "avatar_library_updated" ? <p className="text-sm">Added {typeof payload.name === "string" ? payload.name : "avatar"} to the avatar library.</p> : api && event.type === "result_saved" && typeof payload.resultId === "string" && typeof payload.version === "number" && typeof payload.name === "string" ? <SavedResultButton api={api} id={payload.resultId} version={payload.version} name={payload.name}/> : pending && onDecide ? <ApprovalCard approval={pending} api={api} onDecide={onDecide} inline botName={bot?.name} />
                     : event.type === "message" && !reply && typeof payload.text === "string" && !payload.text.trim() && Array.isArray(payload.attachments) && payload.attachments.length > 0 ? null
                     : <Bubble align={align} variant={event.type === "error" ? "destructive" : formatted ? "tinted" : "muted"}
                       style={formatted && event.type !== "error" ? { "--primary": avatarColors[avatarBot?.avatar?.color ?? avatarFor(avatarName).color] } as CSSProperties : undefined}>

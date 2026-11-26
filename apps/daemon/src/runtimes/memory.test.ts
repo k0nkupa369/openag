@@ -6,11 +6,11 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createApprovals } from "../approvals.js";
 import { type Db, openDb } from "../db/index.js";
 import { createLedger } from "../ledger.js";
-import { appendMemoryNote, memoryPath } from "../memory.js";
+import { appendMemoryNote, memoryPath, ownerNotesPath } from "../memory.js";
 import { addMember, createBot, createRoom, getBot, getRoom } from "../rooms.js";
 import { createRunner } from "./runner.js";
 import { defaultTools } from "./tools.js";
-import type { BotRuntime } from "./types.js";
+import type { BotRuntime, TurnContext } from "./types.js";
 
 let dir: string;
 let db: Db;
@@ -73,5 +73,27 @@ describe("runner memory", () => {
     await say("fourth, changes memory");
     expect(git(["log", "--format=%s"]).split("\n")[0]).toBe("memory: update after turn by boss");
     expect(git(["log", "--format=%an"]).split("\n")[0]).toBe("openagd");
+  });
+
+  test("every agent's context carries the owner notes head before its own MEMORY.md", async () => {
+    createBot(db, { id: "coder", runtime: "acp" });
+    addMember(db, "main", "coder");
+    writeFileSync(ownerNotesPath(dir), "- 2026-11-01 Lives in Auckland\n");
+    const hosted: NonNullable<TurnContext["hostedInput"]>[] = [];
+    onTurn = () => undefined;
+    const ledger = createLedger(db);
+    const runner = createRunner({ db, ledger, approvals: createApprovals(db, ledger), dataDir: dir, tools: defaultTools,
+      runtimes: { api: { async runTurn(ctx) { hosted.push(ctx.hostedInput!); } }, acp: fake } });
+    const ask = (botId: string) => runner.run(getRoom(db, "main")!, getBot(db, botId)!, ledger.append("main", "user", "message", { text: "hi" }));
+
+    await ask("coder");
+    const prompt = prompts.at(-1)!;
+    expect(prompt).toContain("Lives in Auckland");
+    expect(prompt.indexOf("Lives in Auckland")).toBeLessThan(prompt.indexOf("Your standing notes (MEMORY.md):"));
+
+    await ask("boss");
+    const sources = hosted.at(-1)!.data.map((d) => d.source);
+    expect(hosted.at(-1)!.data.find((d) => d.source === "owner_notes")?.content).toContain("Lives in Auckland");
+    expect(sources.indexOf("owner_notes")).toBeLessThan(sources.indexOf("memory"));
   });
 });

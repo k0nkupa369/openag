@@ -4,6 +4,12 @@ Baseline: 3 November 2026. Part 2 source reconciliation: 4 November 2026. Browse
 
 OA-403 follow-up: Slack setup/diagnostics were separated, agent sections now expand inline with mounted drafts, Full ledger moved to Activity, and agent actions use pointer-gated opacity with immediate keyboard/touch access. See follow-up evidence.
 
+## Release 0.8 skill curator — 26 November 2026
+
+The revise approval in ApprovalCard composes the shared Alert (stale warning), Skeleton (loading the current version) and EvidenceBlock; the per-line diff is plain text inside EvidenceBlock with a hidden `+`/`-` gutter and screen-reader change labels. The Skills panel Archived section is a plain list with the shared Separator, a secondary count Badge, an outline "Archived" Badge (neutral metadata) and Restore as a shared outline Button. Audited exception: the added and removed line tints use `color-mix(in oklab, var(--online|--destructive) 12%, transparent)`. They derive from the semantic tokens in both themes, but no shared diff or tint token exists, and a status Badge or Alert would misstate a line of text as a status. Removed lines also use `text-muted-foreground`, so the change does not rely on colour alone.
+
+Rendered: the `skill-curator` scenario in `scripts/verify-rendered-acceptance.mjs` (revise card and Archived section at desktop 1440×1000 and phone 390×844, light and dark; restore end to end at desktop light). Physical phone, Safari and screen-reader checks were not run.
+
 ## OA-501 Conversation unread — 6 November 2026
 
 The sidebar and phone navigation use the shared attention Badge for unread conversations; direct-agent and room rows retain the installed Base Sidebar composition. The transcript boundary uses the installed Base Marker separator and attention Badge inside MessageScroller. Read and unread states use the same variants across the redesigned and classic shells. The new-message marker and unread badge follow the shared read boundary.
@@ -232,6 +238,7 @@ The following tables record the current disposition. Per-module source, native i
 | [code-block](../../apps/desk/src/components/ui/code-block.tsx) | Official native CodeBlock surface and scrollable content; no independent payload skins. | Corrected native composition — shared native primitive; OA-409 scope and evidence. |
 | [command](../../apps/desk/src/components/ui/command.tsx) | Retain native Command/cmdk composition; reconcile item and input sizing. | Reconciled native composition — shared native primitive; OA-409 scope and evidence. |
 | [dialog](../../apps/desk/src/components/ui/dialog.tsx) | Reconcile caller widths, padding, scrolling, actions, motion and focus. | Reconciled native composition — shared native primitive; OA-409 scope and evidence. |
+| [drawer](../../apps/desk/src/components/ui/drawer.tsx) | Unmodified shadcn base-nova Drawer (Base UI); used only for the phone sidebar so it closes with a swipe. | Native composition — 20 November 2026 drawer section; `motion` scenario covers the phone swipe. Physical devices and Safari unverified. |
 | [dropdown-menu](../../apps/desk/src/components/ui/dropdown-menu.tsx) | Retain native menu; check item grouping, trigger and keyboard behaviour. | Reconciled native composition — shared native primitive; OA-409 scope and evidence. |
 | [empty](../../apps/desk/src/components/ui/empty.tsx) | Retain native Empty; reconcile feature empty/loading/error distinctions. | Reconciled native composition — shared native primitive; OA-409 scope and evidence. |
 | [field](../../apps/desk/src/components/ui/field.tsx) | Retain Field/FieldLabel/FieldError composition; reconcile ad hoc forms. | Reconciled native composition — shared native primitive; OA-409 scope and evidence. |
@@ -816,3 +823,20 @@ Phone sizes, dark theme, Safari and physical devices were not run for the motion
 - **Tooltip:** one `TooltipProvider` (delay 600ms) at the root. `ui/tooltip.tsx` is unchanged.
 - **Sidebar reorder:** a feature-level gesture in `SidebarList.tsx`. The only styling change is to `.desk-dragging`: it now sits above its neighbours and its opacity goes from 0.5 to 0.85.
 - **Rendered coverage:** the full `verify-rendered-acceptance.mjs` run covers layout at desktop and phone sizes in both themes. The `motion` scenario covers the gestures on desktop (reorder) and on phone with touch (drawer). Physical devices and Safari are unverified.
+
+## History search in the search command (release 0.8)
+
+The existing `CommandDialog` gains a **Messages** `CommandGroup` (`HistorySearch.tsx`) built from installed `CommandGroup`/`CommandItem`; snippets are text with `<mark>` ranges using the semantic `primary` token. The sidebar gains a **Search** `SidebarMenuButton` that opens the same dialog, so phones can reach it. The dialog keeps its existing no-animation open (keyboard-opened, used often). The landing mark on the opened message (`.desk-search-hit`) is a one-time background fade on the `MessageScrollerItem`, no layout or transform. Rendered in Chromium by `verify-rendered-acceptance.mjs history-search`: results at desktop 1440×1000 and phone 390×844 in light and dark, no-match on desktop, opened-at-message in all four variants; 9/9 passed. Physical phones, Safari and screen readers are unverified.
+
+| Component | Source coverage | Rendered coverage |
+| --- | --- | --- |
+| [HistorySearch](../../apps/desk/src/components/HistorySearch.tsx) | New. Installed `CommandGroup`/`CommandItem` inside the existing `CommandDialog`; snippet highlights are `<mark>` text on the `primary` token. No control skin or dependency added. | `history-search` scenario as above: 9/9 at desktop and phone, light and dark. |
+
+## Release 0.8 owner notes (T3b) — 25 November 2026
+
+Settings → Profile gains an Owner notes `SettingsSection` below Your profile. Notes use the installed base-nova `ItemGroup`/`Item` (outline, sm) with `ItemContent` and a ghost/sm `Button` in `ItemActions` for Remove; the busy Remove and Save buttons use `Spinner` with `data-icon`. The empty state is the installed `Empty` composition; whole-file editing reuses `Textarea` as Saved memory does; errors use the destructive `Alert`. No status badge, control skin, token or dependency added.
+
+| Component | Source coverage | Rendered coverage |
+| --- | --- | --- |
+| [OwnerNotesSection](../../apps/desk/src/components/OwnerNotesSection.tsx) | New. SettingsSection, Item/ItemGroup list, ghost/sm Remove, outline Edit notes, Textarea editor, Empty, Skeleton loading, destructive Alert. Owner/Full controls only; Limited sees the list and a one-line access note. | `R08-owner-notes` in `verify-rendered-acceptance.mjs`: empty, list (including a long wrapping note), editing, and Limited read-only, each at desktop 1440×1000 and phone 390×844 in light and dark; 16 of 16 passed with no horizontal overflow or console errors. Physical phone, Safari and screen readers not run. |
+| [ProfileSettings](../../apps/desk/src/components/ProfileSettings.tsx) | Renders OwnerNotesSection; header description now names both parts of the page. Form unchanged. | Existing OA-460/OA-462 states re-run in the same pass: 33 of 33 passed. |

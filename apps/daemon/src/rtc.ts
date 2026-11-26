@@ -44,7 +44,9 @@ const ID_RE = /^[A-Za-z0-9_-]{8,40}$/;
 const DEVICE_ID_RE = /^[a-f0-9]{16}$/;
 
 /** First path segments a peer may reach (GET/POST only). The desk's normal API; no owner-only management routes. */
-const DEVICE_PATHS = /^\/(avatars|app-library|whoami|rooms|bots|approvals|digest|wake|health|work|results|questions)(\/|\?|$)/;
+const DEVICE_PATHS = /^\/(avatars|app-library|history|owner-notes|whoami|rooms|bots|approvals|digest|wake|health|work|results|questions)(\/|\?|$)/;
+/** Segments a peer may only read: GET. */
+const GET_ONLY_PATHS = /^\/(avatars|app-library|history|owner-notes)(\/|\?|$)/;
 const PAIR_PATHS = /^\/(pair|health)(\?|$)/;
 
 export interface RtcStatus {
@@ -536,7 +538,7 @@ export function createRtcService(deps: RtcDeps): RtcService {
     } else {
       const interaction = /^\/mcp\/interactions\/[a-f0-9-]{36}(?:\/response)?$/.test(routed);
       if(interaction && !((method === "GET" && !routed.endsWith("/response")) || (method === "POST" && routed.endsWith("/response"))))return reply(peer,frame.id,403,"not allowed");
-      const allowed = (DEVICE_PATHS.test(routed)||interaction||provenanceRead) && (!/^\/(avatars|app-library)(\/|\?|$)/.test(routed) || method === "GET");
+      const allowed = (DEVICE_PATHS.test(routed)||interaction||provenanceRead) && (!GET_ONLY_PATHS.test(routed) || method === "GET");
       if (!allowed || (/^\/(work|results|questions)(\/|\?|$)/.test(routed) && method !== "GET" && !(method === "POST" && (/^\/work\/[a-f0-9-]{36}\/(start|cancel)$/.test(routed)||/^\/questions\/[a-f0-9-]{36}\/answer$/.test(routed))))) return reply(peer, frame.id, 403, "not allowed");
       if (!routed.startsWith("/health")) {
         const who = deviceOf(peer, frame.headers);

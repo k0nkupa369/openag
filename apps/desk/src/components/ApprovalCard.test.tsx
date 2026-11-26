@@ -2,6 +2,7 @@ import { fireEvent, render, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ApprovalCard } from "./ApprovalCard";
 import type { Approval, Decision } from "../types";
+import type { Api } from "../api";
 
 const HOSTILE = "<script>alert(1)</script><img src=x onerror=alert(2)>";
 
@@ -206,5 +207,51 @@ describe("ApprovalCard settings proposals", () => {
     const card = within(container.querySelector('[role="article"]') as HTMLElement);
     expect(card.queryByRole("button", { name: "Apply change" })).toBeNull();
     expect(card.getByText("Needs an owner or full-access device to decide.")).toBeTruthy();
+  });
+});
+
+describe("ApprovalCard skill curator proposals", () => {
+  const revise = (payload: Record<string, unknown> = {}) => approval("r1", "reflection_skill_revise", {
+    slug: "weekly-review", name: "Weekly review", description: "Review the week",
+    body: "1. Collect\n2. Summarise the week\n3. Send", reason: "Missed the send step", baseVersion: 2, ...payload,
+  });
+  // Saved SKILL.md bodies end with a newline; the proposal usually does not, which is not a change.
+  const skillApi = (version: number, body = "1. Collect\n2. Summarise\n") => ({
+    getSkill: vi.fn(async () => ({ skill: { slug: "weekly-review", name: "Weekly review", description: "Review the week", version, triggers: [], body } })),
+  }) as unknown as Api & { getSkill: ReturnType<typeof vi.fn> };
+
+  it("shows a revision as removed and added lines against the agent's current version", async () => {
+    const api = skillApi(2);
+    const { container } = render(<ApprovalCard approval={revise()} onDecide={vi.fn()} api={api} />);
+    const card = within(container.querySelector('[role="article"]') as HTMLElement);
+    expect(card.getByText("boss wants to revise a skill")).toBeTruthy();
+    expect(card.getByText("Missed the send step")).toBeTruthy();
+    const change = await card.findByRole("region", { name: "Changes to Weekly review" });
+    expect(api.getSkill).toHaveBeenCalledWith("boss", "weekly-review");
+    // Each line carries a visual +/- mark and a screen-reader label.
+    const lines = [...change.querySelectorAll("[data-change]")].map(line => line.textContent);
+    expect(lines).toEqual([" 1. Collect", "-removed: 2. Summarise", "+added: 2. Summarise the week", "+added: 3. Send"]);
+    expect(card.queryByText(/changed after this proposal/)).toBeNull();
+  });
+
+  it("warns that accepting will be refused when the skill changed since the proposal", async () => {
+    const { container } = render(<ApprovalCard approval={revise()} onDecide={vi.fn()} api={skillApi(3)} />);
+    const card = within(container.querySelector('[role="article"]') as HTMLElement);
+    expect(await card.findByText(/changed after this proposal/)).toBeTruthy();
+  });
+
+  it("shows the proposed text without a comparison when the current version cannot be read", () => {
+    const { container } = setup(revise());
+    expect(container.textContent).toContain("3. Send");
+  });
+
+  it("shows the archive reason and Accept without Edit", () => {
+    const a = { ...approval("x1", "reflection_skill_archive", { slug: "old-report", name: "Old report", reason: "Not loaded since August", baseVersion: 1 }), canEdit: false };
+    const { container } = setup(a);
+    const card = within(container.querySelector('[role="article"]') as HTMLElement);
+    expect(card.getByText("boss wants to archive a skill")).toBeTruthy();
+    expect(card.getByText("Archive skill: Old report")).toBeTruthy();
+    expect(card.getByText("Not loaded since August")).toBeTruthy();
+    expect((card.getByRole("button", { name: "Edit" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

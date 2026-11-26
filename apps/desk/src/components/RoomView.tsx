@@ -47,9 +47,12 @@ export function RoomView({
   loading = false,
   onRetry,
   canManage = false,
+  messageId,
 }: {
   api: Api;
   roomId: string;
+  /** Open the transcript at this event (history search) instead of the recent end. */
+  messageId?: number;
   selectedWorkId?: string;
   panelTab?: RoomPanelTab;
   selectedSetting?: BotSettingSection;
@@ -67,7 +70,7 @@ export function RoomView({
   /** Owner or full-access device: only they can save room settings. */
   canManage?: boolean;
 }) {
-  const ledger = useLedger(api, roomId),
+  const ledger = useLedger(api, roomId, messageId),
     { status,subscribe } = useStream();
   const unread=rooms.find(item=>item.id===roomId)?.unread;
   const marking=useRef(false);
@@ -406,6 +409,7 @@ export function RoomView({
               roomId={roomId}
               runningBotIds={ledger.state.runningTurns.map(turn=>turn.botId)}
               activityRowIds={ledger.activityRowIds}
+              highlightId={messageId}
               before={ledger.before}
               loadingOlder={ledger.loadingOlder}
               onOlder={ledger.more}

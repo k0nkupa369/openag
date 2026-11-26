@@ -26,7 +26,7 @@ import { MAX_HOPS, parseDelegations } from "../delegation.js";
 import { handleIndex } from "../handles.js";
 import { commitMemory, ensureDataRepo } from "../datagit.js";
 import { buildPrompt, buildHostedInput, buildAcpHistory, type HostedInput, mayDelegate, RECALL_UNAVAILABLE_NOTE } from "../prompt.js";
-import { ensureMemoryFile, memoryPath, readMemoryHead } from "../memory.js";
+import { ensureMemoryFile, memoryPath, readMemoryHead, readOwnerNotesHead } from "../memory.js";
 import { createSkillCatalogue, type SkillCatalogue } from "../skills.js";
 import { type Bot, getBot, getRoom, type Room, type Runtime } from "../rooms.js";
 import { getDefaultRedactor, type Redactor } from "../redact.js";
@@ -153,7 +153,7 @@ export interface TurnMeta {
   isolated?: boolean;
   /** Keep this turn out of the vector recall index (turns that carry untrusted external text). */
   noIndex?: boolean;
-  /** Deny search and browse tools (any outbound channel). Used with unattended turns that read untrusted text. */
+  /** Deny browse tools and search tools that are not offline-safe (any outbound channel). Used with unattended turns that read untrusted text. */
   noNetwork?: boolean;
 }
 
@@ -485,9 +485,12 @@ export function createRunner(deps: RunnerDeps): Runner {
     const guestAssignment=!!task.workId&&!!guestWork(db,task.workId,room.id,bot.id);
     const roster = (guestAssignment ? [bot.id] : room.members).map((id) => getBot(db, id)).filter((b): b is Bot => b !== undefined);
     const outputParts: string[] = [];
-    if(!investigation&&!readCheck&&!state.agentRequestId&&!guestAssignment)ensureMemoryFile(deps.dataDir, bot);
-    const memory = investigation||readCheck||state.agentRequestId||guestAssignment?'':readMemoryHead(deps.dataDir, bot.id);
-    const mayRecall=!investigation&&!readCheck&&!state.agentRequestId&&!guestAssignment&&!!vectors;
+    // Bounded turns (investigation, read check, agent request, guest Work) get no MEMORY.md, owner notes or recall.
+    const bounded=!!(investigation||readCheck||state.agentRequestId||guestAssignment);
+    if(!bounded)ensureMemoryFile(deps.dataDir, bot);
+    const memory = bounded?'':readMemoryHead(deps.dataDir, bot.id);
+    const ownerNotes = bounded?'':readOwnerNotesHead(deps.dataDir);
+    const mayRecall=!bounded&&!!vectors;
     const searchRecall=async()=>{try{return {hits:await vectors!.search(bot.id,resume?.prompt??text,4)};}catch(error){if(error instanceof RecallUnavailable)return {hits:[],unavailable:true};throw error;}};
     const acpRecall = mayRecall&&bot.runtime==='acp' ? await searchRecall() : {hits:[]};
     const recall = acpRecall.hits.map((h) => h.text), recallUnavailable = acpRecall.unavailable === true;
@@ -502,7 +505,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if(promptPermission){try{modeGuidance=permissionGuidance(promptPermission,intersectPermissions(promptPermission,parentScopes()),turnPolicy);}catch{modeGuidance='Inherited permission scope is unavailable. Do not dispatch operations or try another channel; ask the owner for a fresh scope.';}}
     state.guestHistoryRevision=agentRequests.historyRevision(room.id,bot.id,message.id);
     const fork=state.isolated===true||state.noIndex===true||typeof state.source==='string'||investigation||readCheck?undefined:forkContext(db,room.id);
-    const promptInput={bot,room,roster,guestWork:guestAssignment,coordinator:!guestAssignment&&!state.unattended&&!state.isolated&&!state.agentRequestId&&!state.source&&!investigation&&(room.kind==='direct'?getDefaultBotId(db)===bot.id:room.leadBotId===bot.id),fork,permission:modeGuidance,body:messageWithReply(message,resume?.prompt??text),memory,recall,recallUnavailable,
+    const promptInput={bot,room,roster,guestWork:guestAssignment,coordinator:!guestAssignment&&!state.unattended&&!state.isolated&&!state.agentRequestId&&!state.source&&!investigation&&(room.kind==='direct'?getDefaultBotId(db)===bot.id:room.leadBotId===bot.id),fork,permission:modeGuidance,body:messageWithReply(message,resume?.prompt??text),ownerNotes,memory,recall,recallUnavailable,
       capabilities:state.isolated===true?undefined:deps.capabilityGuidance?.(),
       knowledge:getDefaultBotId(db)===bot.id?knowledge.index():undefined,
       skills:investigation||readCheck?undefined:skills.index(bot.id)};
@@ -521,7 +524,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         if(bot.runtime==='api')hostedInput={...buildHostedInput(promptInput,excluded?[]:history.messages,message.actor,typeof state.source==='string'?state.source:undefined),historyOmitted:excluded?0:history.omitted,historyOmittedRange:excluded?undefined:history.omittedRange,historyBoundary:history.throughId};
         else {
           const sources=[contextDescriptor('current',promptInput.body,promptInput.body)];
-          for(const [source,content] of [['instructions',(bot.config as {instructions?:string})?.instructions],['permission',promptInput.permission],['capabilities',promptInput.capabilities],['fork',promptInput.fork],['memory',promptInput.memory?.trimEnd()],['help',promptInput.knowledge],['skills',promptInput.skills?.trimEnd()]] as const)if(content)sources.push(contextDescriptor(source,content,content));
+          for(const [source,content] of [['instructions',(bot.config as {instructions?:string})?.instructions],['permission',promptInput.permission],['capabilities',promptInput.capabilities],['fork',promptInput.fork],['owner_notes',promptInput.ownerNotes?.trimEnd()],['memory',promptInput.memory?.trimEnd()],['help',promptInput.knowledge],['skills',promptInput.skills?.trimEnd()]] as const)if(content)sources.push(contextDescriptor(source,content,content));
           for(const hit of recall){const content=hit.replace(/[\r\n]+/g,' ').slice(0,600);sources.push(contextDescriptor('recall',hit,content,undefined,hit.length>600?'source-clipped':undefined));}
           if(recallUnavailable)sources.push(contextDescriptor('recall',RECALL_UNAVAILABLE_NOTE,RECALL_UNAVAILABLE_NOTE));
           acpHistory=buildAcpHistory(excluded?[]:history.messages,selected=>sources.push(...selected));
